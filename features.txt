@@ -1,0 +1,176 @@
+struct stateWheel {
+	float tyreRadius;
+	float tyreWidth;
+	float rimRadius;
+	float tyreDirty;  1 ok
+	float tyreWear;   1 ok
+	float tyrePressure;  1 ok
+	float tyreTemperature;  1 ok
+	float discTemperature;  1 ok
+	float angularSpeed;  1 ok
+	float loadK;  1 ok
+	float slip;   1 ok
+	float slipAngle;   1 ok
+	float slipRatio;   1 ok
+	float ndSlip;   1
+	float suspensionDamage;
+	float suspensionTravel;
+	vec3 contactNormal;
+	vec3 contactPoint;
+	vec3 pos;
+	vec3 look;
+	vec3 up;
+	vec3 outside;
+	bool isBlown;
+}
+
+struct stateCar {
+	float mass;
+	float maxFuel;
+	float exposureOutside;
+	float exposureInside;
+	float shakeMultiplier;
+	vec3 aabbCenter;
+	vec3 aabbSize;
+	int gearCount;   
+	int turboCount;
+	bool hShifter;
+	bool adjustableTurbo;
+	bool brakesCockpitBias;
+	float brakesBiasLimitDown;
+	float brakesBiasLimitUp;
+	float brakesBiasStep;
+	vec3 pos;   1 ok
+	vec3 velocity;   1 ok
+	vec3 acceleration;   1 ok
+	vec3 angularVelocity;   1 ok
+	vec3 localAngularVelocity;   1 ok
+	vec3 up;
+	vec3 look;
+	vec3 side;
+	float gas;   1 ok
+	float brake;   1 ok
+	float clutch;  
+	float steer;   1 ok
+	float handbrake;
+	int gear;  1 ok
+	float fuel;
+	float rpm;  1 ok
+	float rpmLimiter;
+	float speedKmh;  1 ok
+	float turboBoost;  
+	float finalForceFeedback;
+	float drivetrainSpeed;
+	float waterTemperature;
+	float cgHeight;
+	int wheelsOutside;
+	float engineLifeLeft;
+	float damage[5];
+	float gearboxDamage;
+	int nodeIndex;
+	int visibleIndex;
+	float distanceToCamera;
+	float splinePosition;    1
+	float collisionDepth;
+	int collidedWith; // 0 for track, non-zero for cars
+	state_wheel wheels[4];
+	bool isAiControlled;
+	bool isInPitlane;
+	bool isRetired;
+	bool gearGrinding;
+	bool headlightsActive;
+	bool brakeLightsActive;
+	bool flashingLightsActive;
+	bool hornActive;
+	bool focused;
+	bool focusedOnInterior;
+	bool hazardLights;
+	bool turningLeftLights;
+	bool turningRightLights;
+	bool turningLeftOnly;
+	bool turningRightOnly;
+	bool lowBeams;
+	bool extraA;
+	bool extraB;
+	bool extraC;
+	bool extraD;
+	bool extraE;
+	bool extraF;
+	bool kersCharging;
+	float kersCharge;
+	float kersInput;
+	float kersCurrentKJ;
+	float distanceDrivenTotalKm;
+	float distanceDrivenSessionKm;
+	float poweredWheelsSpeed;
+	float batteryVoltage;
+	float oilPressure;
+	float oilTemperature;
+	float exhaustTemperature;
+	int wiperMode;
+	float wiperProgress;
+	float bodyWetness;
+	float compass;
+	int lapTimeMs;   1
+	int bestLapTimeMs;  
+	int previousLapTimeMs;
+	int lapCount;
+	int racePosition;
+	int estimatedLapTimeMs;
+	float performanceMeter;   To ask
+	float performanceMeterSpeedDifferenceMs; To ask
+	int sessionLapCount;
+	int compoundIndex;
+	bool physicsAvailable;
+	bool speedLimiterInAction;
+	bool absInAction;  1
+	bool tractionControlInAction;   1
+	bool hasUserBrakeBias;
+	int tractionControlMode; // 0 for disabled TC
+	int absMode; // 0 for disabled ABS
+	float speedLimiter;
+	float differentialPreload;
+	float awdFrontShare;
+	float drivetrainTorque;   1
+	float drivetrainPower;    1
+	float brakeBias;
+	float turboBoosts[8];
+	float turboWastegates[8];
+	float tractionControl2;
+	float fuelMap;
+	float ffbFinal;
+	float ffbPure;
+}
+struct __declspec(align(4)) ldm_car_controls {
+  float gas;   1   [0-1]%
+  float brake;   1 [0-1]%
+  float clutch;   Maybe
+  float steer;   1  [-30° +30°]
+  float handbrake;
+  bool gear_up;  in function
+  bool gear_dn;  in function
+  bool drs;
+  bool kers;
+  bool brake_balance_up;
+  bool brake_balance_dn;
+  bool abs_up;
+  bool abs_dn;
+  bool tc_up;
+  bool tc_dn;
+  bool turbo_up;
+  bool turbo_dn;
+  bool engine_brake_up;
+  bool engine_brake_dn;
+  bool mguk_delivery_up;
+  bool mguk_delivery_dn;
+  bool mguk_recovery_up;
+  bool mguk_recovery_dn;
+  uint8 mguh_mode;
+  bool headlights;
+  uint8 teleport_to;  // 0 for not teleporting, 1 for teleporting to pits, 2 for teleporting to custom position
+  bool autoclutch_on_start; 
+  bool autoclutch_on_change;  in function
+  bool autoblip_active;
+  float3 teleport_pos;  // used with teleport_to set to 2  In RESET FUNCTION  2 for teleporting to custom position
+  float3 teleport_dir;
+};
