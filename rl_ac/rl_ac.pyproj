@@ -12,6 +12,8 @@
     <Name>rl_ac</Name>
     <RootNamespace>rl_ac</RootNamespace>
     <TestFramework>Pytest</TestFramework>
+    <InterpreterId>CondaEnv|CondaEnv|logitech</InterpreterId>
+    <SuppressEnvironmentCreationPrompt>True</SuppressEnvironmentCreationPrompt>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -22,9 +24,15 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="controller.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="env.py" />
     <Compile Include="sim_info.py" />
     <Compile Include="test.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="CondaEnv|CondaEnv|logitech" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

@@ -10,9 +10,11 @@ __pycache__/
 .Python
 build/
 develop-eggs/
+media/
 dist/
 downloads/
 eggs/
+rl_ac/Data
 .eggs/
 lib/
 lib64/
