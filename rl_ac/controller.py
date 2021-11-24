@@ -96,6 +96,7 @@ class VehiclePIDController():
         minimum_norm = norms.argmin()
         turn= minimum_norm+horizon/6
         self.speed_multiplier = 1.08
+        # TODO Try PI + full steering available
         self._lat_controller._K_P = 0.5
         self._lat_controller._K_D = 0.1
         self._lat_controller._K_I = 0
