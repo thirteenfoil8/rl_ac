@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>95f93644-d78e-4599-8768-2f67cc3fed1f</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>sim_info.py</StartupFile>
+    <StartupFile>ray_train.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -24,12 +24,22 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="circuit_laps.py" />
     <Compile Include="controller.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="env.py" />
+    <Compile Include="lidar.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ray_train.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="sim_info.py" />
     <Compile Include="test.py" />
+    <Compile Include="unit_test_env.py">
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="CondaEnv|CondaEnv|logitech" />

@@ -6,12 +6,13 @@ import time
 import numpy as np
 import struct
 import pandas as pd
-from threading import Thread
+import ray
 import os
-from multiprocessing import shared_memory
 from controller import VehiclePIDController
+import multiprocessing
 import subprocess
 import matplotlib.pyplot as plt
+from lidar import init_track_data,compute_lidar_distances
 features_needed = ['gas',
                    'brake',
                    'gear',
@@ -38,11 +39,10 @@ features_needed = ['gas',
                    'slip_angle_deg',
                    'nd_slip',
                    'wheel_look',
-                   'abs_in_action',
-                   'traction_control_in_action',
                    'lap_time_ms',
                    'best_lap_time_ms',
-                   'drivetrain_torque',]
+                   'drivetrain_torque',
+                   'spline_position']
 
 
 class AP_wheel(ctypes.Structure):
@@ -63,6 +63,7 @@ class AP_wheel(ctypes.Structure):
         ('slip_angle_deg', c_float ),
         ('nd_slip', c_float ),
         ('wheel_look', c_float * 3),
+        ('poubelle', c_float * 6)
         ]
 class SPageFilePhysics(ctypes.Structure):
     _pack_ = 4
@@ -98,6 +99,9 @@ class SPageFilePhysics(ctypes.Structure):
         ('lap_time_ms', c_uint32),
         ('best_lap_time_ms', c_uint32),
         ('drivetrain_torque', c_float),
+        ('spline_position', c_float),
+        ('collision_depth', c_float),
+        ('collision_counter', c_uint32)
         
     ]
 
@@ -146,6 +150,7 @@ class SPageSimControls(ctypes.Structure):
         ('pause', c_bool),  
         ('restart_session', c_bool), 
         ('disable_collisions', c_bool), 
+        ('delay_ms', c_uint8), 
     ]
 
 class SimInfo:
@@ -155,10 +160,11 @@ class SimInfo:
         self.physics = SPageFilePhysics.from_buffer(self._acpmf_physics)
         self.init_pos = self.physics.position
         self.init_dir = self.physics.look
+        self.sideleft_xy,self.sideright_xy,self.centerline_xy = init_track_data()
 
-    def read_states(self,info):
+    def read_states(self):
         states = dict.fromkeys(features_needed, 0)
-        _struct = info.physics
+        _struct = self.physics
         _dict= self.getdict(_struct)
         self.unified_wheels(_dict)
         for key in _dict.keys():
@@ -194,7 +200,8 @@ class SimInfo:
             'slip',
             'slip_angle_deg', 
             'nd_slip',
-            'wheel_look',]
+            'wheel_look',
+            'poubelle']
         states = dict.fromkeys(keys, 0)
         for j in range(len(_dict['wheels'][0])):
             values = []
@@ -203,7 +210,6 @@ class SimInfo:
             values = np.array(values)
             states[keys[j]] = values
         _dict.update(states)
-
     #def close(self):
     #    self._acpmf_physics.close()
 
@@ -214,11 +220,13 @@ class SimControl:
     def __init__(self,file = "AcTools.CSP.ModuleLDM.AIProject.CarControls0.v0"):
         self.file = file
         self.init_file()
+        print('file created')
         self._controls = mmap.mmap(0, ctypes.sizeof(SPageFileControls), file)
         self.controls =SPageFileControls.from_buffer(self._controls)
         self.controls.clutch=1
+        self.last_gear = 1
         self.treshold_up = 7500 
-        self.treshold_dn = 5000
+        self.treshold_dn = 4600
         self.changed_gear=False
         self.controls.autoclutch_on_change=True
         
@@ -227,6 +235,7 @@ class SimControl:
         p = subprocess.Popen('Drivemaster.AiProjectWriter.exe {}'.format(self.file))
         time.sleep(2)
         p.terminate()
+        p.kill()
     def update_control(self):
         new_controls =bytearray(self.controls)
         self._controls.seek(0)
@@ -235,7 +244,7 @@ class SimControl:
     def change_controls(self,states,input,steer=0):
         self.controls.clutch=1
         gas = 0
-        brake = 0
+        brake = 0 
         if input > 0:
             gas = input
         elif input < 0:
@@ -249,9 +258,8 @@ class SimControl:
         self.controls.gear_up = 0
         self.controls.teleport_to = 0
         self.controls.gear_dn = 0
-        previous_gear= states['gear']
         if gas > 0:
-            if states['gear'] == 1 :
+            if states['gear'] == 1  and states['rpm']> 1500:
                 self.change_gear(0)
                 
             if states['rpm'] > self.treshold_up and states['gear'] != 1 :
@@ -261,11 +269,11 @@ class SimControl:
             if states['rpm'] < self.treshold_dn and (states['gear'] not in [1,2]) :
                 self.change_gear(1) #decrease
                 
-            if states['speedKmh'] < 1:
-               if states['gear']== 0:
-                    self.change_gear(0)
-               if states['gear'] == 2: 
-                   self.change_gear(1)
+            #if states['speedKmh'] < 1:
+            #   if states['gear']== 0:
+            #        self.change_gear(0)
+            #   if states['gear'] == 2: 
+            #       self.change_gear(1)
 
         self.update_control()
 
@@ -274,7 +282,7 @@ class SimControl:
         self.controls.teleport_pos = position
         self.controls.teleport_dir = dir
         self.update_control()
-        time.sleep(0.5)
+        print('Teleportation')
 
     def change_gear(self,state):
         if state == 0:
@@ -300,6 +308,7 @@ class SimStates:
         p =subprocess.Popen('Drivemaster.AiProjectWriter.exe {}'.format(self.file))
         time.sleep(2)
         p.terminate()
+        p.kill()
     def change_states(self):
         self.sim.disable_collisions = True
 
@@ -307,9 +316,25 @@ class SimStates:
         new_controls =bytearray(self.sim)
         self._sim.seek(0)
         self._sim.write(new_controls)
+    def pause(self):
+        self.sim.pause = True
+        self.update_sim()
+    def play(self):
+        self.sim.pause = False
+        self.update_sim()
+    def speed(self,value=3):
+        self.sim.delay_ms = value
+        self.update_sim()
+    def reset(self):
+        self.sim.restart_session=True
+        self.update_sim()
+        time.sleep(0.1)
+        self.sim.restart_session=False
+        self.update_sim()
 
 
-def teleport(controller,control):
+def teleport(controller,control,info):
+    states,_ = info.read_states()
     waypoint,_,_ =controller.find_nearest()
     waypoint= waypoint.tolist()
     FloatArr = c_float * 3
@@ -326,36 +351,138 @@ def teleport(controller,control):
     _look[2] = look[2]
     
     control.teleport(_waypoint,_look)
-def PID_unit(states,df,info,control):
-    controller = VehiclePIDController(states,control,df)
-    
-    #teleport(controller,control)
-    i=0
-    while states['best_lap_time_ms'] > 59400 or states['best_lap_time_ms'] == 0:
-        states,_dict = info.read_states(info)
-        
-        input,steering =controller.run_step(states)
 
-        i+=1
-    control.change_controls(states,0,0)    
+
+def PID_unit(states,df,info,control,sim):
+    controller = VehiclePIDController(info,states,control,df,sim)
+    #sim.speed()
+    #teleport(controller,control,info)
+    while controller._vehicle['best_lap_time_ms'] > 59400 or controller._vehicle['best_lap_time_ms'] == 0:
+        #sim.pause()
+        #_time = time.time()
+        #while time.time()- _time <0.3:
+        #    input,steering =controller.run_step()
+        #sim.play()
+
+        distances = compute_lidar_distances(states["look"],states["position"],info.sideleft_xy,info.sideright_xy)
+        
+        controller.run_step()
+        
+
+    control.change_controls(states,0,0) 
+
+#@ray.remote
+def run_pid(controller):
+    while controller._vehicle['best_lap_time_ms'] > 59400 or controller._vehicle['best_lap_time_ms'] == 0:
+        input,steering =controller.run_step()
+
+
+def PID_multiple(states_list,df,info_list,control_list,controller_list,sim,nbr_car):
+    best_lap_time = []
+    
+    for i in range(nbr_car):
+        best_lap_time.append(states_list[i]['best_lap_time_ms'])
+    #p1 = multiprocessing.Process(target=run_pid, args=(controller_list[0],))
+    #p2 = multiprocessing.Process(target=run_pid, args=(controller_list[1],))
+
+    #p1.start()
+    #p2.start()
+
+    #ray.register_class(VehiclePIDController)
+    #ray.init()
+    #ray.get(run_pid.remote(controller_list[0]),run_pid.remote(controller_list[1]))
+    best_lap_time = []
+    
+    for i in range(nbr_car):
+        best_lap_time.append(states_list[i]['best_lap_time_ms'])
+    while min(best_lap_time) > 59400 or min(best_lap_time) == 0:
+        for i in range(nbr_car):
+            controller_list[i].run_step()
+    for i in range(nbr_car):
+        control_list[i].change_controls(states,0,0) 
+def create_cars(nbr_car=1):
+    template_name = "AcTools.CSP.ModuleLDM.AIProject.CarControls0.v0"
+    final_control =""
+    for i in range(nbr_car):
+        final_control = final_control  +template_name[:43]+str(i) +template_name[44:]
+    p =subprocess.Popen('Drivemaster.AiProjectWriter.exe {}'.format(final_control))
+    time.sleep(2)
+    p.terminate()
+    p.kill()
 def main_multiple(nbr_car):
+    create_cars(nbr_car)
     sim =SimStates()
     sim.change_states()
     sim.update_sim()
+    #sim.speed()
+    template_name = ["AcTools.CSP.ModuleLDM.AIProject.Car0.v0","AcTools.CSP.ModuleLDM.AIProject.CarControls0.v0"]
     info_list = []
     control_list = []
+    controller_list = []
     states_list = []
+
+    df = pd.read_csv("Data/Kevin/dynamic.csv",converters={'position': pd.eval})
+    df['position'] =df[["WorldPosition_X","WorldPosition_Y","WorldPosition_Z"]].apply(lambda r: np.array(r), axis=1)
+    for i in range(nbr_car):
+        control_string = template_name[1]
+        info_string = template_name[0]
+        final_control = control_string[:43]+str(i) +control_string[44:]
+        final_info = info_string[:35]+str(i) +info_string[36:]
+        info_list.append(SimInfo(final_info))
+        control_list.append(SimControl(final_control))
         
+    for i in range(nbr_car):
+        states,_ =  info_list[i].read_states()
+        states_list.append(states)
+        controller_list.append(VehiclePIDController(info_list[i],states_list[i],control_list[i],df))
+
+    PID_multiple(states_list,df,info_list,control_list,controller_list,sim,nbr_car)
+        
+def print_size_states(states):
+    count = 0
+    for i in states.values():
+        if isinstance(i,list):
+            count+= len(i)
+        else:
+            count+=1
+    print(count)
+def states_to_1d_vector(states):
+    new_list = list(states.values())
+    final_list = []
+    for i in new_list:
+        if isinstance(i,list):
+            for j in i:
+                final_list.append(j)
+        elif isinstance(i,np.ndarray):
+            for j in i:
+                if isinstance(j,np.ndarray):
+                    for k in j:
+                        final_list.append(k)
+                else:
+                    final_list.append(j)
+        else:
+            final_list.append(i)
+    #for i in final_list:
+    #    if isinstance(i, )
+    arr = np.array(final_list)
+    arr = arr.astype(np.float32)
+    return arr
 
 def main_unit():
     info = SimInfo()
     control= SimControl()
-    states,_dict = info.read_states(info)
+    sim =SimStates()
+    sim.change_states()
+    sim.update_sim()
+    states,_dict = info.read_states()
+    states_to_1d_vector(states)
     df = pd.read_csv("Data/Kevin/dynamic.csv",converters={'position': pd.eval})
     df['position'] =df[["WorldPosition_X","WorldPosition_Y","WorldPosition_Z"]].apply(lambda r: np.array(r), axis=1)
-    PID_unit(states,df,info,control)
-main_multiple(1)
-main_unit()   
+    PID_unit(states,df,info,control,sim)
+
+
+#main_multiple(2)
+#main_unit()   
     
     
    

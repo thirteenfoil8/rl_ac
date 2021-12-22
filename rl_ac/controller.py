@@ -7,6 +7,7 @@ from scipy import spatial
 import time
 from numpy.core.umath_tests import inner1d
 from numpy import sin, cos, tan, arctan, pi
+import pandas as pd
 # tune more in bang bang method !!!!
 class VehiclePIDController():
     """
@@ -14,7 +15,7 @@ class VehiclePIDController():
     low level control a vehicle from client side
     """
 
-    def __init__(self, states,control,df, args_lateral=None, args_longitudinal=None):
+    def __init__(self,info, states,control,df,sim, args_lateral=None, args_longitudinal=None):
         """
         :param vehicle: actor to apply to local planner logic onto
         :param args_lateral: dictionary of arguments to set the lateral PID controller using the following semantics:
@@ -35,17 +36,26 @@ class VehiclePIDController():
         if not args_longitudinal:
              #using ziegler-nichols, We have Ku = 1 Tu = 1
              #Then K_P =0.6 ,K_D = 0.075, K_I = 0.3
-            args_longitudinal = {'K_P': 0.3, 'K_D': 0.00, 'K_I': 0.000}
-
+            args_longitudinal = {'K_P': 0.3, 'K_D': 0, 'K_I': 10}
+        self.info = info
         self._vehicle = states
+        self.sim =sim
+        self.dict = {}
         self._controls = control
-        self.speed_multiplier = 1.1
+        self.speed_multiplier = 1
         self.df =df
+        self.data_flag = True
+        self.data = []
         self.target = [0,0,0]
+        self.last_lap_time_ms = 0
         self._lon_controller = PIDLongitudinalController(self._vehicle, **args_longitudinal)
         self._lat_controller = PIDLateralController(self._vehicle, **args_lateral)
+    def __reduce__(self):
+        deserializer = VehiclePIDController
+        serialized_data = (self.info,self._vehicle,self._controls,self.df,self._lon_controller,self._lat_controller,)
+        return deserializer, serialized_data
 
-    def run_step(self, states):
+    def run_step(self):
         """
         Execute one step of control invoking both lateral and longitudinal PID controllers to reach a target waypoint
         at a given target_speed.
@@ -53,20 +63,38 @@ class VehiclePIDController():
         :param waypoint: target location encoded as a waypoint
         :return: distance (in meters) to the waypoint
         """
-        self._vehicle = states
+        self._vehicle,self.dict = self.info.read_states()
+        #print(self._vehicle['spline_position'])
         
         
         
         
         waypoint,speed,yaw=self.find_nearest()
+        self.data_collecting()
         
         speed= speed * self.speed_multiplier
-        input = self._lon_controller.run_step(states,speed)
-        steering = self._lat_controller.run_step(states,waypoint,yaw)
+        input = self._lon_controller.run_step(self._vehicle,speed)
+        steering = self._lat_controller.run_step(self._vehicle,waypoint,yaw)
         control = self._controls
         control.change_controls(self._vehicle, input,steering)
 
         return input,steering
+
+    def data_collecting(self):
+        
+        if self._vehicle['best_lap_time_ms'] > 0 and self.data_flag:
+            df = pd.DataFrame(self.data)
+            self.sim.pause()
+            df.to_excel("test.xlsx",index=False)
+            self.sim.play()
+            self.data_flag = False
+        if self._vehicle['lap_time_ms'] < self.last_lap_time_ms:
+            self.data=[]
+            print('reset')
+        self.last_lap_time_ms = self._vehicle['lap_time_ms']
+        self.data.append(self._vehicle)
+        
+
 
     def next_target(self):
         waypoint,speed= self.find_nearest()
@@ -93,40 +121,46 @@ class VehiclePIDController():
         return angle_selected.index
     def horizon_selection(self,norms):
         horizon = 48
+        horizon_gas= 10
         minimum_norm = norms.argmin()
-        turn= minimum_norm+horizon/6
-        self.speed_multiplier = 1.08
+        gas_norm = norms.argmin()
+        turn= minimum_norm+horizon/8
+        self.speed_multiplier = 1.01
         # TODO Try PI + full steering available
         self._lat_controller._K_P = 0.5
         self._lat_controller._K_D = 0.1
-        self._lat_controller._K_I = 0
-        self._lat_controller.max_steer = 0.2
+        self._lat_controller._K_I = 10
+        self._lat_controller.max_steer = 1
         if turn>= self.df.shape[0]:
             turn = turn -self.df.shape[0]
         if np.abs(self.df.LocalAngularVelocity_Y[turn]) > 0.03:
             minimum_norm =  turn
             self._lat_controller.max_steer = 1
-            self.speed_multiplier = 1
+            self.speed_multiplier = 1.00
             self._lat_controller._K_P = 2
             self._lat_controller._K_D = 0.5
             self._lat_controller._K_I = 0
-            if np.abs(self.df.LocalAngularVelocity_Y[turn]) > 0.15:
-                self.speed_multiplier = 1
-                self._lat_controller._K_P = 4
+            if np.abs(self.df.LocalAngularVelocity_Y[turn]) > 0.10:
+                self.speed_multiplier = 1.00
+                self._lat_controller._K_P = 3
                 self._lat_controller._K_D = 0.4
         elif minimum_norm+horizon >= self.df.shape[0]:
             minimum_norm =  minimum_norm+horizon-self.df.shape[0]
         else:
             minimum_norm = minimum_norm + horizon
-        return minimum_norm
+        if gas_norm +horizon_gas>= self.df.shape[0]:
+            gas_norm = gas_norm+horizon_gas -self.df.shape[0]
+        else: 
+            gas_norm = gas_norm+horizon_gas
+        return minimum_norm,gas_norm
     def find_nearest(self):
         x,y,z = self._vehicle['position']
         node = np.array([x,y,z])
         nodes = self.df.position
         deltas = self.df.position.apply(lambda r: r-node)
         norms =np.sqrt(inner1d(np.stack(deltas,axis = 0),np.stack(deltas,axis = 0)))
-        minimum_norm =self.horizon_selection(norms)
-        return nodes[minimum_norm],self.df.Speed[minimum_norm],self.df.LocalAngularVelocity_Y[minimum_norm]
+        minimum_norm,gas_norm =self.horizon_selection(norms)
+        return nodes[minimum_norm],self.df.Speed[gas_norm],self.df.LocalAngularVelocity_Y[minimum_norm]
     
     
 
@@ -151,6 +185,10 @@ class PIDLongitudinalController():
         self._K_I = K_I
         self._dt = dt
         self._e_buffer = deque(maxlen=30)
+    def __reduce__(self):
+        deserializer = PIDLongitudinalController
+        serialized_data = (self._vehicle,)
+        return deserializer, serialized_data
 
     def run_step(self,states, target_speed, debug=False):
         """
@@ -182,7 +220,7 @@ class PIDLongitudinalController():
         else:
             _de = 0.0
             _ie = 0.0
-        return np.clip((self._K_P * _e) + (self._K_D * _de / self._dt) + (self._K_I * _ie * self._dt), -0.9, 1.0)
+        return np.clip((self._K_P * _e) + (self._K_D * _de / self._dt) + (self._K_I * _ie * self._dt), -1, 1.0)
 
 def wrap2pi(angle):
     wrapped_angle = np.remainder(angle, 2*pi)
@@ -219,6 +257,10 @@ class PIDLateralController():
         self.windup_guard = 100.0
         self.current_time = current_time if current_time is not None else time.time()
         self.last_time = self.current_time
+    def __reduce__(self):
+        deserializer = PIDLongitudinalController
+        serialized_data = (self._vehicle,)
+        return deserializer, serialized_data
 
     def run_step(self,states, waypoint,yaw):
         """

@@ -1,7 +1,14 @@
 import gym
 import numpy as np
+import sim_info
+from lidar import init_track_data,compute_lidar_distances
+from gym.utils import seeding
+from numpy.core.umath_tests import inner1d
+import time
+from ctypes import c_float
 
-class Env(object):
+
+class AC_Env(gym.Env):
     """
 
     The main API methods that users of this class need to know are:
@@ -17,25 +24,96 @@ class Env(object):
 
     The methods are accessed publicly as "step", "reset", etc...
     """
+    def __init__(self,env_config={}):
+        self.initialise_data()
+        self.done = False
+        self.info = {}
+        self.reward_total= 0
+        self.reward_step = 0
+        self.spline_before = 0
+        self.out_of_road = 1
+        self.time_check = 0
+        self.last_action = 0
+        self.collision = 0
+        self.max_steps= 6000
+        # add max_steps if spline_position is bigger than modulo 10%
+        self.wrong_action = 01  dSA
+        self.count= 0
+        
+        
+        self._vehicle =  sim_info.SimInfo()
+        self.init_pos = c_float * 3
+        self.init_dir = c_float * 3
+        
+        self.controls = sim_info.SimControl()
+        self.sim =sim_info.SimStates()
+        self.states,_ = self._vehicle.read_states() 
+        
+        self.obs1d = []
+        self.sideleft_xy,self.sideright_xy,self.centerline_xy = init_track_data()
 
-    # Set this in SOME subclasses
-    metadata = {"render.modes": []}
-    reward_range = (-float("inf"), float("inf"))
-    spec = None
-
-    # Set these in ALL subclasses
-    self.action_space = gym.spaces.Box(
-            # [gas break steer]   has to see for steering [-30° +30°]
-            low =np.array([0,0,-1]), # gas
-            high = np.array([1,1,1]), # break
-            shape=(1, 3),
+        # Set these in ALL subclasses
+        self.action_space = gym.spaces.Box(
+            low=-1.,
+            high=1.,
+            shape=(2,),
             dtype=np.float32)
 
-    self.observation_space = gym.spaces.Box(
-            low=np.finfo(np.float32).min,
-            high=np.finfo(np.float32).max,
-            shape=(61,), # 28 observation from the state of the car
-            dtype=np.float32)
+        self.observation_space = gym.spaces.Box(
+                low=np.finfo(np.float32).min,
+                high=np.finfo(np.float32).max,
+                shape=(149,), #88 without Lidar + 61 lidar = 149 obs in float 32 --> 804 bytes per step
+                dtype=np.float32)
+        self.seed()
+        self.reset()
+    def teleport_conversion(self):
+        FloatArr = c_float * 3
+
+        _waypoint = FloatArr()
+        _waypoint[0] = 322.2773742675781
+        _waypoint[1] = 192.01971435546875
+        _waypoint[2] =  84.85726165771484
+        _look = FloatArr()
+        _look[0] = -0.9996861815452576
+        _look[1] = 0.02443912997841835
+        _look[2] = -0.005505245644599199
+        self.init_pos =  _waypoint
+        self.init_dir =  _look
+    def initialise_data(self):
+        sim_info.create_cars()
+    def reset(self):
+        """Resets the environment to an initial state and returns an initial
+        observation.
+
+        Note that this function should not reset the environment's random
+        number generator(s); random variables in the environment's state should
+        be sampled independently between multiple calls to `reset()`. In other
+        words, each call of `reset()` should yield an environment suitable for
+        a new episode, independent of previous episodes.
+
+        Returns:
+            observation (object): the initial observation.
+        """
+        self.done = False
+        for i in range(5):
+            self.teleport_conversion()
+            self.controls.teleport(self.init_pos,self.init_dir)
+            time.sleep(0.2)
+        self.states,dict = self._vehicle.read_states()
+        self.controls.change_controls(self.states,0,0)
+        
+        #self.sim.reset()
+        self.update_observations()
+        self.reward_total = 0
+        self.count= 0
+        self.wrong_action = 0
+        self.out_of_road= 1
+        self.reward_step= 0
+        self.time_check=time.time()
+        self.collision =dict['collision_counter']
+        return self.obs1d
+    def move(self,action):
+        self.controls.change_controls(self.states,action[0],action[1])
 
     def step(self, action):
         """Run one timestep of the environment's dynamics. When end of
@@ -53,28 +131,86 @@ class Env(object):
             done (bool): whether the episode has ended, in which case further step() calls will return undefined results
             info (dict): contains auxiliary diagnostic information (helpful for debugging, and sometimes learning)
         """
-        raise NotImplementedError
+        # [-1:1]  9° 
+        #Add Reward function and Done state
+        self.spline_before = self.states['spline_position']
+        # reward negativ on huge delta step. over 1 degree - > negative reward proportional to delta 
+        # reward positif between 0-1 ° 
+        if action[1] > self.last_action+0.02: # 9° 
+            action[1] = self.last_action+0.02
+        if action[1] < self.last_action-0.02:
+            action[1] = self.last_action-0.02
+        if self.wrong_action >300:
+            self.done = True
+
+        if time.time()-self.time_check >10 and self.states['speedKmh']<2:
+            self.done=True
+        if self.count > self.max_steps:
+            self.done=True
+        if not self.done:
+            self.move(action)
+            self.update_observations()
+            self.update_reward()
+            self.count+= 1
+            self.last_action = action[1]
+            self.max_steps
+
+        obs = self.obs1d
+        reward = self.reward_step
+        done = self.done
+        info = {}
+        # ─── RESET ITERATION VARIABLES ───────────────────────────────────
+        self.reward_step = 0
+        return [obs,reward ,done,info]
 
     def update_observations(self):
+        self.out_of_road=1
+        self.states,dict = self._vehicle.read_states()
+        if dict['collision_counter']> self.collision:
+            self.out_of_road = -10
+            self.wrong_action +=1
+            self.done=True
+        self.obs1d = sim_info.states_to_1d_vector(self.states)
+        #Compute the distance with the border of the track
+        lidar= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
+        
+        # if len(lidar)< 61, then the car is out of track --> add 0 to have data consistency
+        if lidar.shape[0]< 61:
+            self.out_of_road= -10
+            self.wrong_action +=1
+            self.obs1d =np.append(self.obs1d,lidar)
+            self.obs1d =np.append(self.obs1d,np.zeros(61-lidar.shape[0]).astype(np.float32))
+        
+        else:
+            self.obs1d =np.append(self.obs1d,lidar)
 
-        raise NotImplementedError
+    def update_reward(self):
+        dist = self.find_nearest()
+        # If distance with centerline > 10m --> negative reward
+        if dist > 10:
+            reward_ai_pos = -(self.states['spline_position']-self.spline_before)
+        # Else, the closer to 0m , the higher the reward 
+        else:
+            dist_normed= dist/10
+            reward_ai_pos = (self.states['spline_position']-self.spline_before)* (1-dist_normed)
 
-    def reset(self):
-        """Resets the environment to an initial state and returns an initial
-        observation.
+        # Reward step = distance achieved reward + distance to centerline reward. If out of road, the reward becomes negativ
+        self.reward_step= (self.states['spline_position']-self.spline_before)*(self.out_of_road) +reward_ai_pos
+        self.reward_total += self.reward_step
 
-        Note that this function should not reset the environment's random
-        number generator(s); random variables in the environment's state should
-        be sampled independently between multiple calls to `reset()`. In other
-        words, each call of `reset()` should yield an environment suitable for
-        a new episode, independent of previous episodes.
+    def find_nearest(self):
+        x = self.centerline_xy[:,0]
+        y = self.centerline_xy[:,1]
+        pos = np.array([x,y])
+        x_car,z_car,y_car = self.states['position']
+        deltas = pos - np.array([x_car,-y_car]).reshape((2,1))
+        norms =np.sqrt(inner1d(np.stack(deltas,axis = 1),np.stack(deltas,axis = 1)))
+        minimum_norm = norms.min()
+        return minimum_norm
 
-        Returns:
-            observation (object): the initial observation.
-        """
-        raise NotImplementedError
+    
 
-    @abstractmethod
+    
     def render(self, mode="human"):
         """Renders the environment.
 
@@ -112,8 +248,22 @@ class Env(object):
                 else:
                     super(MyEnv, self).render(mode=mode) # just raise an exception
         """
-        raise NotImplementedError
-
+        print(s.format(self.states, self.reward_step, self.info))
+    def seed (self, seed=None):
+        """Sets the seed for this env's random number generator(s).
+        Note:
+            Some environments use multiple pseudorandom number generators.
+            We want to capture all such seeds used in order to ensure that
+            there aren't accidental correlations between multiple generators.
+        Returns:
+            list<bigint>: Returns the list of seeds used in this env's random
+              number generators. The first value in the list should be the
+              "main" seed, or the value which a reproducer should pass to
+              'seed'. Often, the main seed equals the provided 'seed', but
+              this won't be true if seed=None, for example.
+        """
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
     def close(self):
         """Override close in your subclass to perform any necessary cleanup.
 
@@ -122,22 +272,6 @@ class Env(object):
         """
         pass
 
-    def seed(self, seed=None):
-        """Sets the seed for this env's random number generator(s).
-
-        Note:
-            Some environments use multiple pseudorandom number generators.
-            We want to capture all such seeds used in order to ensure that
-            there aren't accidental correlations between multiple generators.
-
-        Returns:
-            list<bigint>: Returns the list of seeds used in this env's random
-              number generators. The first value in the list should be the
-              "main" seed, or the value which a reproducer should pass to
-              'seed'. Often, the main seed equals the provided 'seed', but
-              this won't be true if seed=None, for example.
-        """
-        return
 
     @property
     def unwrapped(self):

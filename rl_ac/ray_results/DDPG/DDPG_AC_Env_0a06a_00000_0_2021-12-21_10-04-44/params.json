@@ -1,0 +1,7 @@
+{
+  "env": "<class 'env.AC_Env'>",
+  "framework": "tf",
+  "num_cpus_per_worker": 8,
+  "num_gpus": 1,
+  "num_workers": 1
+}
