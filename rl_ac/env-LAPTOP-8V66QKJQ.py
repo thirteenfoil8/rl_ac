@@ -164,7 +164,6 @@ class AC_Env(gym.Env):
         return [obs,reward ,done,info]
 
     def update_observations(self):
-
         self.out_of_road=1
         self.states,dict = self._vehicle.read_states()
         if dict['collision_counter']> self.collision:
@@ -184,10 +183,8 @@ class AC_Env(gym.Env):
         
         else:
             self.obs1d =np.append(self.obs1d,lidar)
-        #TODO Add Curvature
 
     def update_reward(self):
-        # Sliding 
         #Maybe penalize pwd on gas
         dist,angle = self.find_nearest()
         reward_unit = (self.states['spline_position']-self.spline_before)
@@ -202,10 +199,6 @@ class AC_Env(gym.Env):
         #If the angle between the look angle of the car and the AI angle > np.pi/4 --> negative reward
         if angle > np.pi/9 or angle < -np.pi/9:
             reward_ai_angle = reward_unit*-100
-
-        #Add positiv reward for angle diff small
-
-        #Add Reward based on the angle of the steer related to the curvature of the track
 
         # Reward step = distance achieved reward + distance to centerline reward + angle with centerline angle reward. If out of road, the reward becomes negativ
         self.reward_step= reward_unit*(self.out_of_road) +reward_ai_pos + reward_ai_angle

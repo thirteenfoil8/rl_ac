@@ -15,6 +15,7 @@ dist/
 downloads/
 eggs/
 rl_ac/Data
+rl_ac/ray_results
 .eggs/
 lib/
 lib64/

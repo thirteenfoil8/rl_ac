@@ -26,22 +26,22 @@ features_needed = ['gas',
                    'position',
                    'local_velocity',
                    'local_angular_velocity',
-                   'cg_height',
+                   'cg_height', #delete
                    'slip_ratio',
-                   'load',
-                   'pressure',
+                   'load', #delete
+                   'pressure',# delete
                    'angular_velocity',
-                   'wear',
-                   'dirty_level',
-                   'core_temperature',
-                   'disc_temperature',
+                   'wear', # delete
+                   'dirty_level', #delete
+                   'core_temperature', #delete
+                   'disc_temperature', #delete
                    'slip',
                    'slip_angle_deg',
                    'nd_slip',
-                   'wheel_look',
+                   'wheel_look',#delete
                    'lap_time_ms',
                    'best_lap_time_ms',
-                   'drivetrain_torque',
+                   'drivetrain_torque',#delete
                    'spline_position']
 
 
@@ -50,6 +50,9 @@ class AP_wheel(ctypes.Structure):
     _fields_ = [('wheel_position', c_float * 3),
         ('contact_point', c_float * 3),
         ('contact_normal', c_float * 3),
+        ('wheel_look', c_float * 3),
+        ('side', c_float * 3),
+        ('wheel_velocity', c_float * 3),
         ('slip_ratio', c_float ), 
         ('load', c_float ),
         ('pressure', c_float ),
@@ -62,8 +65,7 @@ class AP_wheel(ctypes.Structure):
         ('slip', c_float ),
         ('slip_angle_deg', c_float ),
         ('nd_slip', c_float ),
-        ('wheel_look', c_float * 3),
-        ('poubelle', c_float * 6)
+        ('sideways_velocity', c_float),
         ]
 class SPageFilePhysics(ctypes.Structure):
     _pack_ = 4
@@ -160,7 +162,7 @@ class SimInfo:
         self.physics = SPageFilePhysics.from_buffer(self._acpmf_physics)
         self.init_pos = self.physics.position
         self.init_dir = self.physics.look
-        self.sideleft_xy,self.sideright_xy,self.centerline_xy = init_track_data()
+        self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz = init_track_data()
 
     def read_states(self):
         states = dict.fromkeys(features_needed, 0)
@@ -186,22 +188,24 @@ class SimInfo:
         return result
     def unified_wheels(self,_dict):
         keys= ['wheel_position',
-            'contact_point',
-            'contact_normal',
-            'slip_ratio', 
-            'load',
-            'pressure',
-            'angular_velocity',
-            'wear',
-            'dirty_level',
-            'core_temperature',
-            'camber_rad',
-            'disc_temperature',
-            'slip',
-            'slip_angle_deg', 
-            'nd_slip',
-            'wheel_look',
-            'poubelle']
+        'contact_point',
+        'contact_normal',
+        'wheel_look',
+        'side',
+        'wheel_velocity',
+        'slip_ratio', 
+        'load',
+        'pressure',
+        'angular_velocity',
+        'wear',
+        'dirty_level', #delete
+        'core_temperature',
+        'camber_rad',
+        'disc_temperature',
+        'slip',
+        'slip_angle_deg',
+        'nd_slip',
+        'sideways_velocity',]
         states = dict.fromkeys(keys, 0)
         for j in range(len(_dict['wheels'][0])):
             values = []
