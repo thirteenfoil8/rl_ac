@@ -5,6 +5,7 @@ from lidar import init_track_data,compute_lidar_distances
 from gym.utils import seeding
 from numpy.core.umath_tests import inner1d
 import time
+import random
 from ctypes import c_float
 
 
@@ -50,7 +51,7 @@ class AC_Env(gym.Env):
         self.states,_ = self._vehicle.read_states() 
         
         self.obs1d = []
-        self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz = init_track_data()
+        self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz,self.track_data = init_track_data()
 
         # Set these in ALL subclasses
         self.action_space = gym.spaces.Box(
@@ -62,12 +63,24 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(149,), #88 without Lidar + 61 lidar = 149 obs in float 32 --> 804 bytes per step
+                shape=(112,), #51 without Lidar + 61 lidar = 112 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
     def teleport_conversion(self):
+        #random_splines = np.arange(0,1,0.2)
+        #spline = random.choice(random_splines)
+        #idx=(np.abs(self.track_data[:,3]-spline)).argmin()
+        
         FloatArr = c_float * 3
+        #_waypoint = FloatArr()
+        #_waypoint[0] = self.track_data[idx,0]
+        #_waypoint[1] = self.track_data[idx,1]
+        #_waypoint[2] =  self.track_data[idx,2]
+        #_look = FloatArr()
+        #_look[0] = self.track_data[idx,17]
+        #_look[1] = self.track_data[idx,18]
+        #_look[2] = self.track_data[idx,19]
 
         _waypoint = FloatArr()
         _waypoint[0] = 322.2773742675781
@@ -95,8 +108,8 @@ class AC_Env(gym.Env):
             observation (object): the initial observation.
         """
         self.done = False
+        self.teleport_conversion()
         for i in range(5):
-            self.teleport_conversion()
             self.controls.teleport(self.init_pos,self.init_dir)
             time.sleep(0.2)
         self.states,dict = self._vehicle.read_states()
@@ -131,16 +144,15 @@ class AC_Env(gym.Env):
             done (bool): whether the episode has ended, in which case further step() calls will return undefined results
             info (dict): contains auxiliary diagnostic information (helpful for debugging, and sometimes learning)
         """
-        # [-1:1]  9° 
-        #Add Reward function and Done state
+        # [-1:1]  18° 
         self.spline_before = self.states['spline_position']
         # reward negativ on huge delta step. over 1 degree - > negative reward proportional to delta 
         # reward positif between 0-1 ° 
-        if action[1] > self.last_action+0.02: # 9° 
-            action[1] = self.last_action+0.02
-        if action[1] < self.last_action-0.02:
-            action[1] = self.last_action-0.02
-        if self.wrong_action >100:
+        if action[1] > self.last_action+0.04: # 18° 
+            action[1] = self.last_action+0.04
+        if action[1] < self.last_action-0.04:
+            action[1] = self.last_action-0.04
+        if self.wrong_action >20:
             self.done = True
 
         if time.time()-self.time_check >10 and self.states['speedKmh']<2:
@@ -168,7 +180,7 @@ class AC_Env(gym.Env):
         self.out_of_road=1
         self.states,dict = self._vehicle.read_states()
         if dict['collision_counter']> self.collision:
-            self.out_of_road = -10
+            self.out_of_road = -1000
             self.wrong_action +=1
             self.done=True
         self.obs1d = sim_info.states_to_1d_vector(self.states)
@@ -184,13 +196,14 @@ class AC_Env(gym.Env):
         
         else:
             self.obs1d =np.append(self.obs1d,lidar)
-        #TODO Add Curvature
+        self.obs1d = np.append(self.obs1d,self.find_curvature().astype(np.float32))
+        
 
     def update_reward(self):
         # Sliding 
         #Maybe penalize pwd on gas
         dist,angle = self.find_nearest()
-        reward_unit = (self.states['spline_position']-self.spline_before)
+        reward_unit = self.states['spline_position']-self.spline_before
         reward_ai_angle = 0
         # If distance with centerline > 10m --> negative reward
         if dist > 10:
@@ -204,13 +217,19 @@ class AC_Env(gym.Env):
             reward_ai_angle = reward_unit*-100
 
         #Add positiv reward for angle diff small
+        if np.abs(angle)<np.pi/36:
+            reward_ai_angle = reward_unit * 10*(1-np.abs(angle/(np.pi/36)))
 
-        #Add Reward based on the angle of the steer related to the curvature of the track
+        #Maybe Add Reward based on the angle of the steer related to the curvature of the track
 
         # Reward step = distance achieved reward + distance to centerline reward + angle with centerline angle reward. If out of road, the reward becomes negativ
         self.reward_step= reward_unit*(self.out_of_road) +reward_ai_pos + reward_ai_angle
         self.reward_total += self.reward_step
 
+    def find_curvature(self):
+        idx=(np.abs(self.track_data[:,3]-self.states['spline_position'])).argmin()
+        #Return the curvature radius on the current location
+        return (self.track_data[idx,11]*self.track_data[idx,7])
     def find_nearest(self):
         x = self.centerline_xy[:,0]
         y = self.centerline_xy[:,1]
@@ -221,12 +240,12 @@ class AC_Env(gym.Env):
         minimum_norm = norms.argmin()
         norm = norms.min()
         minimum_norm += 6
-        if minimum_norm > norms.shape[0]:
+        if minimum_norm >= norms.shape[0]: 
             minimum_norm = minimum_norm - norms.shape[0]
         
         look = self.states['look']
         ideal = self.normal_xyz[minimum_norm]
-        error = self.angle_clockwise(look,[ideal[1],ideal[0],ideal[2]])
+        error = self.angle_clockwise(look,[ideal[0],ideal[1],ideal[2]])
         return norm,error
 
     def angle_clockwise(self,A,B):

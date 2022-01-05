@@ -26,22 +26,13 @@ features_needed = ['gas',
                    'position',
                    'local_velocity',
                    'local_angular_velocity',
-                   'cg_height', #delete
                    'slip_ratio',
-                   'load', #delete
-                   'pressure',# delete
                    'angular_velocity',
-                   'wear', # delete
-                   'dirty_level', #delete
-                   'core_temperature', #delete
-                   'disc_temperature', #delete
                    'slip',
                    'slip_angle_deg',
                    'nd_slip',
-                   'wheel_look',#delete
                    'lap_time_ms',
                    'best_lap_time_ms',
-                   'drivetrain_torque',#delete
                    'spline_position']
 
 
@@ -162,7 +153,7 @@ class SimInfo:
         self.physics = SPageFilePhysics.from_buffer(self._acpmf_physics)
         self.init_pos = self.physics.position
         self.init_dir = self.physics.look
-        self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz = init_track_data()
+        self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz,self.track_data = init_track_data()
 
     def read_states(self):
         states = dict.fromkeys(features_needed, 0)

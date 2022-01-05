@@ -16,7 +16,7 @@ tune.run(
     name = "PPO",
     # to resume training from a checkpoint, set the path accordingly:
     #resume = True, # you can resume from checkpoint
-    #restore = r'.\ray_results\A3C\A3C_RocketMeister10_94e86_00000_0_2021-11-02_07-53-27checkpoint_000060\checkpoint-60',
+    #restore = r'.\ray_results\PPO\PPO_AC_Env_747c1_00000_0_2022-01-04_14-01-39\checkpoint_000160\checkpoint-160',
     checkpoint_freq = 20,
     checkpoint_at_end = True,
     local_dir = r'./ray_results/',
@@ -24,7 +24,7 @@ tune.run(
         "env": AC_Env,
         "num_workers": 1,
         "num_gpus": 1,
-        "num_cpus_per_worker": 2,
+        "num_cpus_per_worker": 6,
         "framework": "torch",
         #"model": {
         #        "_use_default_native_models": False,

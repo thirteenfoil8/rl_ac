@@ -151,7 +151,7 @@ def init_track_data():
         sideright_xy = np.delete(sideright_xyz, obj=1, axis=1)
         sideright_xy[:,1] *= -1
 
-    return sideleft_xy,sideright_xy,centerline_xy,normal_xyz
+    return sideleft_xy,sideright_xy,centerline_xy,forward_xyz,track_data
     
     
 # DEBUG !!!!!!!!!!!!!!!!
