@@ -159,6 +159,11 @@ class AC_Env(gym.Env):
 
         if time.time()-self.time_check >10 and self.states['speedKmh']<2:
             self.done=True
+            self.move(action)
+            self.update_observations()
+            reward_unit = self.states['spline_position']-self.spline_before
+            self.reward_step= reward_unit*-100
+            self.reward_total += self.reward_step
         if self.count > self.max_steps:
             self.done=True
         if not self.done:
@@ -167,7 +172,6 @@ class AC_Env(gym.Env):
             self.update_reward()
             self.count+= 1
             self.last_action = action[1]
-            self.max_steps
 
         obs = self.obs1d
         reward = self.reward_step
@@ -207,6 +211,7 @@ class AC_Env(gym.Env):
         reward_unit = self.states['spline_position']-self.spline_before
         reward_ai_angle = 0
         # If distance with centerline > 10m --> negative reward
+
         if dist > 10:
             reward_ai_pos = -reward_unit
         # Else, the closer to 0m , the higher the reward 
@@ -230,7 +235,7 @@ class AC_Env(gym.Env):
     def find_curvature(self):
         idx=(np.abs(self.track_data[:,3]-self.states['spline_position'])).argmin()
         #Return the curvature radius on the current location
-        return (self.track_data[idx,11]*self.track_data[idx,7])
+        return (1/(self.track_data[idx,12]*self.track_data[idx,8]))
     def find_nearest(self):
         x = self.centerline_xy[:,0]
         y = self.centerline_xy[:,1]
