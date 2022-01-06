@@ -68,28 +68,30 @@ class AC_Env(gym.Env):
         self.seed()
         self.reset()
     def teleport_conversion(self):
-        #random_splines = np.arange(0,1,0.2)
-        #spline = random.choice(random_splines)
-        #idx=(np.abs(self.track_data[:,3]-spline)).argmin()
-        
-        FloatArr = c_float * 3
-        #_waypoint = FloatArr()
-        #_waypoint[0] = self.track_data[idx,0]
-        #_waypoint[1] = self.track_data[idx,1]
-        #_waypoint[2] =  self.track_data[idx,2]
-        #_look = FloatArr()
-        #_look[0] = self.track_data[idx,17]
-        #_look[1] = self.track_data[idx,18]
-        #_look[2] = self.track_data[idx,19]
 
+        FloatArr = c_float * 3
+        
+
+        random_splines = np.arange(0,1,0.1)
+        spline = random.choice(random_splines)
+        idx=(np.abs(self.track_data[:,3]-spline)).argmin()
         _waypoint = FloatArr()
-        _waypoint[0] = 322.2773742675781
-        _waypoint[1] = 192.01971435546875
-        _waypoint[2] =  84.85726165771484
+        _waypoint[0] = self.track_data[idx,0]
+        _waypoint[1] = self.track_data[idx,1]
+        _waypoint[2] =  self.track_data[idx,2]
         _look = FloatArr()
-        _look[0] = -0.9996861815452576
-        _look[1] = 0.02443912997841835
-        _look[2] = -0.005505245644599199
+        _look[0] = -self.track_data[idx,16]
+        _look[1] = self.track_data[idx,17]
+        _look[2] = -self.track_data[idx,18]
+
+        #_waypoint = FloatArr()
+        #_waypoint[0] = 322.2773742675781
+        #_waypoint[1] = 192.01971435546875
+        #_waypoint[2] =  84.85726165771484
+        #_look = FloatArr()
+        #_look[0] = -0.9996861815452576
+        #_look[1] = 0.02443912997841835
+        #_look[2] = -0.005505245644599199
         self.init_pos =  _waypoint
         self.init_dir =  _look
     def initialise_data(self):
@@ -180,8 +182,7 @@ class AC_Env(gym.Env):
         self.out_of_road=1
         self.states,dict = self._vehicle.read_states()
         if dict['collision_counter']> self.collision:
-            self.out_of_road = -1000
-            self.wrong_action +=1
+            self.out_of_road = -100
             self.done=True
         self.obs1d = sim_info.states_to_1d_vector(self.states)
         #Compute the distance with the border of the track
