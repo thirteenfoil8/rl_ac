@@ -33,6 +33,7 @@ class AC_Env(gym.Env):
         self.reward_step = 0
         self.spline_before = 0
         self.out_of_road = 1
+        self.start_speed = 0
         self.time_check = 0
         self.last_action = 0
         self.collision = 0
@@ -63,7 +64,7 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(112,), #51 without Lidar + 61 lidar = 112 obs in float 32 --> 804 bytes per step
+                shape=(62,), #50 without Lidar + 61 lidar + curvature= 112 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
@@ -72,26 +73,26 @@ class AC_Env(gym.Env):
         FloatArr = c_float * 3
         
 
-        random_splines = np.arange(0,1,0.1)
-        spline = random.choice(random_splines)
-        idx=(np.abs(self.track_data[:,3]-spline)).argmin()
-        _waypoint = FloatArr()
-        _waypoint[0] = self.track_data[idx,0]
-        _waypoint[1] = self.track_data[idx,1]
-        _waypoint[2] =  self.track_data[idx,2]
-        _look = FloatArr()
-        _look[0] = -self.track_data[idx,16]
-        _look[1] = self.track_data[idx,17]
-        _look[2] = -self.track_data[idx,18]
-
+        #random_splines = np.arange(0,1,0.05)
+        #spline = random.choice(random_splines)
+        #idx=(np.abs(self.track_data[:,3]-spline)).argmin()
         #_waypoint = FloatArr()
-        #_waypoint[0] = 322.2773742675781
-        #_waypoint[1] = 192.01971435546875
-        #_waypoint[2] =  84.85726165771484
+        #_waypoint[0] = self.track_data[idx,0]
+        #_waypoint[1] = self.track_data[idx,1]
+        #_waypoint[2] =  self.track_data[idx,2]
         #_look = FloatArr()
-        #_look[0] = -0.9996861815452576
-        #_look[1] = 0.02443912997841835
-        #_look[2] = -0.005505245644599199
+        #_look[0] = -self.track_data[idx,16]
+        #_look[1] = self.track_data[idx,17]
+        #_look[2] = -self.track_data[idx,18]
+
+        _waypoint = FloatArr()
+        _waypoint[0] = 322.2773742675781
+        _waypoint[1] = 192.01971435546875
+        _waypoint[2] =  84.85726165771484
+        _look = FloatArr()
+        _look[0] = -0.9996861815452576
+        _look[1] = 0.02443912997841835
+        _look[2] = -0.005505245644599199
         self.init_pos =  _waypoint
         self.init_dir =  _look
     def initialise_data(self):
@@ -115,6 +116,7 @@ class AC_Env(gym.Env):
             self.controls.teleport(self.init_pos,self.init_dir)
             time.sleep(0.2)
         self.states,dict = self._vehicle.read_states()
+        
         self.controls.change_controls(self.states,0,0)
         
         #self.sim.reset()
@@ -124,6 +126,7 @@ class AC_Env(gym.Env):
         self.wrong_action = 0
         self.out_of_road= 1
         self.reward_step= 0
+        self.start_speed=0
         self.time_check=time.time()
         self.collision =dict['collision_counter']
         return self.obs1d
@@ -156,14 +159,15 @@ class AC_Env(gym.Env):
             action[1] = self.last_action-0.04
         if self.wrong_action >20:
             self.done = True
+        if not self.start_speed:
+            while self.states['speedKmh'] < 10:
+                self.states,dict = self._vehicle.read_states()
+                self.controls.change_controls(self.states,1,0)
+            self.start_speed=1
 
-        if time.time()-self.time_check >10 and self.states['speedKmh']<2:
+        if time.time()-self.time_check >20 and self.states['speedKmh']<2:
             self.done=True
-            self.move(action)
-            self.update_observations()
-            reward_unit = self.states['spline_position']-self.spline_before
-            self.reward_step= reward_unit*-100
-            self.reward_total += self.reward_step
+
         if self.count > self.max_steps:
             self.done=True
         if not self.done:
@@ -185,10 +189,14 @@ class AC_Env(gym.Env):
 
         self.out_of_road=1
         self.states,dict = self._vehicle.read_states()
+       
         if dict['collision_counter']> self.collision:
             self.out_of_road = -100
             self.done=True
-        self.obs1d = sim_info.states_to_1d_vector(self.states)
+
+        self.obs1d = np.array([])
+        #self.obs1d = sim_info.states_to_1d_vector(self.states)
+        
         #Compute the distance with the border of the track
         lidar= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
         
@@ -213,23 +221,23 @@ class AC_Env(gym.Env):
         # If distance with centerline > 10m --> negative reward
 
         if dist > 10:
-            reward_ai_pos = -reward_unit
+            reward_ai_pos = 0
         # Else, the closer to 0m , the higher the reward 
         else:
             dist_normed= dist/10
-            reward_ai_pos = reward_unit* (1-dist_normed)
+            reward_ai_pos = (1-dist_normed)
         #If the angle between the look angle of the car and the AI angle > np.pi/4 --> negative reward
         if angle > np.pi/9 or angle < -np.pi/9:
-            reward_ai_angle = reward_unit*-100
+            reward_ai_angle = 0
 
         #Add positiv reward for angle diff small
         if np.abs(angle)<np.pi/36:
-            reward_ai_angle = reward_unit * 10*(1-np.abs(angle/(np.pi/36)))
+            reward_ai_angle =  10*(1-np.abs(angle/(np.pi/36)))
 
         #Maybe Add Reward based on the angle of the steer related to the curvature of the track
 
         # Reward step = distance achieved reward + distance to centerline reward + angle with centerline angle reward. If out of road, the reward becomes negativ
-        self.reward_step= reward_unit*(self.out_of_road) +reward_ai_pos + reward_ai_angle
+        self.reward_step= reward_unit*(self.out_of_road +reward_ai_pos + reward_ai_angle)
         self.reward_total += self.reward_step
 
     def find_curvature(self):
