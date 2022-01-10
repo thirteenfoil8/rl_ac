@@ -12,8 +12,8 @@ ray.init(log_to_driver=False)
 trainer = agents.ppo.PPOTrainer
 
 tune.run(
-    "PPO", # reinforced learning agent
-    name = "PPO",
+    "SAC", # reinforced learning agent
+    name = "SAC",
     # to resume training from a checkpoint, set the path accordingly:
     #resume = True, # you can resume from checkpoint
     #restore = r'.\ray_results\PPO\PPO_AC_Env_747c1_00000_0_2022-01-04_14-01-39\checkpoint_000160\checkpoint-160',
