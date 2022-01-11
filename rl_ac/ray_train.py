@@ -12,8 +12,8 @@ ray.init(log_to_driver=False)
 trainer = agents.ppo.PPOTrainer
 
 tune.run(
-    "SAC", # reinforced learning agent
-    name = "SAC",
+    "DDPG", # reinforced learning agent
+    name = "DDPG",
     # to resume training from a checkpoint, set the path accordingly:
     #resume = True, # you can resume from checkpoint
     #restore = r'.\ray_results\PPO\PPO_AC_Env_747c1_00000_0_2022-01-04_14-01-39\checkpoint_000160\checkpoint-160',
@@ -22,22 +22,14 @@ tune.run(
     local_dir = r'./ray_results/',
     config={
         "env": AC_Env,
-        "num_workers": 1,
+        "num_workers": 2,
         "num_gpus": 1,
-        "num_cpus_per_worker": 6,
+        "num_cpus_per_worker": 3,
         "framework": "torch",
-        #"model": {
-        #        "_use_default_native_models": False,
-        #        "use_attention": True,
-        #        },
-        #"env_config":{
-        #    "max_steps": 1000,
-        #    "export_frames": False,
-        #    "export_states": False,
-        #    # "reward_mode": "continuous",
-        #    # "env_flipped": True,
-        #    # "env_flipmode": True,
-        #    },
+        "model": {
+                "_use_default_native_models": False,
+                "use_lstm": True,
+                },
         
         },
     stop = {

@@ -49,7 +49,7 @@ class AC_Env(gym.Env):
         
         self.controls = sim_info.SimControl()
         self.sim =sim_info.SimStates()
-        self.states,_ = self._vehicle.read_states() 
+        self.states,self._dict = self._vehicle.read_states() 
         
         self.obs1d = []
         self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz,self.track_data = init_track_data()
@@ -64,7 +64,7 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(62,), #50 without Lidar + 61 lidar + curvature= 112 obs in float 32 --> 804 bytes per step
+                shape=(94,), #25 car states + 61 lidar + 8curvatures= 112 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
@@ -73,26 +73,28 @@ class AC_Env(gym.Env):
         FloatArr = c_float * 3
         
 
-        #random_splines = np.arange(0,1,0.05)
-        #spline = random.choice(random_splines)
-        #idx=(np.abs(self.track_data[:,3]-spline)).argmin()
-        #_waypoint = FloatArr()
-        #_waypoint[0] = self.track_data[idx,0]
-        #_waypoint[1] = self.track_data[idx,1]
-        #_waypoint[2] =  self.track_data[idx,2]
-        #_look = FloatArr()
-        #_look[0] = -self.track_data[idx,16]
-        #_look[1] = self.track_data[idx,17]
-        #_look[2] = -self.track_data[idx,18]
-
+        random_splines = np.arange(0,1,0.05)
+        spline = random.choice(random_splines)
+        idx=(np.abs(self.track_data[:,3]-spline)).argmin()
         _waypoint = FloatArr()
-        _waypoint[0] = 322.2773742675781
-        _waypoint[1] = 192.01971435546875
-        _waypoint[2] =  84.85726165771484
+        _waypoint[0] = self.track_data[idx,0]
+        _waypoint[1] = self.track_data[idx,1]
+        _waypoint[2] =  self.track_data[idx,2]
         _look = FloatArr()
-        _look[0] = -0.9996861815452576
-        _look[1] = 0.02443912997841835
-        _look[2] = -0.005505245644599199
+        _look[0] = -self.track_data[idx,16]
+        _look[1] = self.track_data[idx,17]
+        _look[2] = -self.track_data[idx,18]
+
+        #_waypoint = FloatArr()
+        #_waypoint[0] = 322.2773742675781
+        #_waypoint[1] = 192.01971435546875
+        #_waypoint[2] =  84.85726165771484
+        #_look = FloatArr()
+        #_look[0] =-0.9996861815452576
+        #_look[1] = 0.02443912997841835
+        #_look[2] = -0.005505245644599199
+
+
         self.init_pos =  _waypoint
         self.init_dir =  _look
     def initialise_data(self):
@@ -117,7 +119,7 @@ class AC_Env(gym.Env):
             time.sleep(0.2)
         self.states,dict = self._vehicle.read_states()
         
-        self.controls.change_controls(self.states,0,0)
+        self.controls.change_controls(self._dict,0,0)
         
         #self.sim.reset()
         self.update_observations()
@@ -131,7 +133,7 @@ class AC_Env(gym.Env):
         self.collision =dict['collision_counter']
         return self.obs1d
     def move(self,action):
-        self.controls.change_controls(self.states,action[0],action[1])
+        self.controls.change_controls(self._dict,action[0],action[1])
 
     def step(self, action):
         """Run one timestep of the environment's dynamics. When end of
@@ -162,10 +164,10 @@ class AC_Env(gym.Env):
         if not self.start_speed:
             while self.states['speedKmh'] < 10:
                 self.states,dict = self._vehicle.read_states()
-                self.controls.change_controls(self.states,1,0)
+                self.controls.change_controls(self._dict,1,0)
             self.start_speed=1
 
-        if time.time()-self.time_check >20 and self.states['speedKmh']<2:
+        if time.time()-self.time_check >10 and self.states['speedKmh']<2:
             self.done=True
 
         if self.count > self.max_steps:
@@ -195,14 +197,14 @@ class AC_Env(gym.Env):
             self.done=True
 
         self.obs1d = np.array([])
-        #self.obs1d = sim_info.states_to_1d_vector(self.states)
+        self.obs1d = sim_info.states_to_1d_vector(self.states)
         
         #Compute the distance with the border of the track
         lidar= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
         
         # if len(lidar)< 61, then the car is out of track --> add 0 to have data consistency
         if lidar.shape[0]< 61:
-            self.out_of_road= -100
+            self.out_of_road= 0
             self.wrong_action +=1
             self.obs1d =np.append(self.obs1d,lidar)
             self.obs1d =np.append(self.obs1d,np.zeros(61-lidar.shape[0]).astype(np.float32))
@@ -232,7 +234,7 @@ class AC_Env(gym.Env):
 
         #Add positiv reward for angle diff small
         if np.abs(angle)<np.pi/36:
-            reward_ai_angle =  10*(1-np.abs(angle/(np.pi/36)))
+            reward_ai_angle =  (1-np.abs(angle/(np.pi/36)))
 
         #Maybe Add Reward based on the angle of the steer related to the curvature of the track
 
@@ -243,7 +245,16 @@ class AC_Env(gym.Env):
     def find_curvature(self):
         idx=(np.abs(self.track_data[:,3]-self.states['spline_position'])).argmin()
         #Return the curvature radius on the current location
-        return (1/(self.track_data[idx,12]*self.track_data[idx,8]))
+        diff = 0
+        curvatures = np.array([])
+        for i in range(8):
+            if idx + i >= len(self.track_data[:,11]):
+                new_idx = (idx + i)-len(self.track_data[:,11])
+                curvatures = np.append(curvatures,1/(self.track_data[new_idx,11]*self.track_data[new_idx,7]))
+            else:
+                curvatures = np.append(curvatures,1/(self.track_data[idx + i,11]*self.track_data[idx + i,7]))
+
+        return curvatures
     def find_nearest(self):
         x = self.centerline_xy[:,0]
         y = self.centerline_xy[:,1]

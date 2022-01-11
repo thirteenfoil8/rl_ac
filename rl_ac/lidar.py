@@ -409,7 +409,7 @@ def compute_lidar(max_dist, half_angle, angle_inc, dir_xy,intersect_type, size,p
 
 #print(lidar_segments.shape)
 def compute_lidar_distances(look,position,sideleft_xy,sideright_xy):
-    max_dist = 1000  # 2km forward looking
+    max_dist = 1000  # 1km forward looking
     half_angle = 60
     angle_inc = 2
 
@@ -445,5 +445,11 @@ def compute_lidar_distances(look,position,sideleft_xy,sideright_xy):
         lidar_distances.append(np.linalg.norm(i-centerline_xy))
 
     arr = np.array(lidar_distances)
+    maximum=0
+    if len(lidar_distances)==0:
+        maximum=1000
+    else:
+        maximum= max(lidar_distances)
+    arr = np.interp(lidar_distances, [0, maximum], [-1, 1])
     arr = arr.astype(np.float32)
     return arr

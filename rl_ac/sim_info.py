@@ -13,26 +13,16 @@ import multiprocessing
 import subprocess
 import matplotlib.pyplot as plt
 from lidar import init_track_data,compute_lidar_distances
-features_needed = ['gas',
-                   'brake',
-                   'gear',
+features_needed = [
                    'rpm',
-                   'steer',
                    'speedKmh',
                    'velocity',
                    'acceleration', 
                    'look',
-                   'up',
                    'position',
                    'local_velocity',
                    'local_angular_velocity',
-                   'slip_ratio',
                    'angular_velocity',
-                   'slip',
-                   'slip_angle_deg',
-                   'nd_slip',
-                   'lap_time_ms',
-                   'best_lap_time_ms',
                    'spline_position']
 
 
@@ -366,6 +356,7 @@ def PID_unit(states,df,info,control,sim):
 
     control.change_controls(states,0,0) 
 
+
 #@ray.remote
 def run_pid(controller):
     while controller._vehicle['best_lap_time_ms'] > 59400 or controller._vehicle['best_lap_time_ms'] == 0:
@@ -473,7 +464,7 @@ def main_unit():
     states_to_1d_vector(states)
     df = pd.read_csv("Data/Kevin/dynamic.csv",converters={'position': pd.eval})
     df['position'] =df[["WorldPosition_X","WorldPosition_Y","WorldPosition_Z"]].apply(lambda r: np.array(r), axis=1)
-    PID_unit(states,df,info,control,sim)
+    PID_unit(_dict,df,info,control,sim)
 
 
 #main_multiple(2)

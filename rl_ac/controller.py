@@ -63,7 +63,7 @@ class VehiclePIDController():
         :param waypoint: target location encoded as a waypoint
         :return: distance (in meters) to the waypoint
         """
-        self._vehicle,self.dict = self.info.read_states()
+        _,self._vehicle = self.info.read_states()
         #print(self._vehicle['spline_position'])
         
         
