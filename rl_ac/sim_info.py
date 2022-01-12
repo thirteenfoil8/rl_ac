@@ -13,7 +13,7 @@ import multiprocessing
 import subprocess
 import matplotlib.pyplot as plt
 from lidar import init_track_data,compute_lidar_distances
-features_needed = [
+features_needed = ['gear',
                    'rpm',
                    'speedKmh',
                    'velocity',
