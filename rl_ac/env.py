@@ -1,4 +1,5 @@
 import gym
+from gym.spaces import Box
 import numpy as np
 import sim_info
 from lidar import init_track_data,compute_lidar_distances
@@ -8,6 +9,22 @@ import time
 import random
 from ctypes import c_float
 
+class ClipAction(gym.core.ActionWrapper):
+    r"""Clip the continuous action within the valid bound."""
+
+    def __init__(self, env):
+        super().__init__(env)
+        self.low = -1
+        self.high = 1
+
+    def action(self, action):
+        
+        if action[1] > self.last_action+0.02: # 9° 
+            action[1] = self.last_action+0.02
+        if action[1] < self.last_action-0.02:
+            action[1] = self.last_action-0.02
+        
+        return np.array([action[0],np.clip(action[1], self.low, self.high)])
 
 class AC_Env(gym.Env):
     """
@@ -37,7 +54,7 @@ class AC_Env(gym.Env):
         self.time_check = 0
         self.last_action = 0
         self.collision = 0
-        self.max_steps= 6000
+        self.max_steps= 20000
         # add max_steps if spline_position is bigger than modulo 10%
         self.wrong_action = 0
         self.count= 0
@@ -115,7 +132,7 @@ self._dict
         self.done = False
         self.teleport_conversion()
         self.controls.teleport(self.init_pos,self.init_dir)
-        time.sleep(0.2)
+        time.sleep(0.5)
         self.states,self._dict = self._vehicle.read_states()
         
         self.controls.change_controls(self._dict,0,0)
@@ -152,12 +169,7 @@ self._dict
         """
         # [-1:1]  18° 
         
-        # reward negativ on huge delta step. over 1 degree - > negative reward proportional to delta 
-        # reward positif between 0-1 ° 
-        if action[1] > self.last_action+0.02: # 18° 
-            action[1] = self.last_action+0.02
-        if action[1] < self.last_action-0.02:
-            action[1] = self.last_action-0.02
+        
         if self.wrong_action >1:
             self.done = True
         #if not self.start_speed:
@@ -172,6 +184,11 @@ self._dict
         if self.count > self.max_steps:
             self.done=True
         self.spline_before = self.states['spline_position']
+        #Workflow:
+        #   send action to the car
+        #   Update observations using RAM Data
+        #   Update the reward
+        #   Store data to the buffer
         if not self.done:
             self.move(action)
             self.update_observations()
@@ -219,30 +236,31 @@ self._dict
 
     def update_reward(self):
         dist,angle = self.find_nearest()
-        #reward_unit = np.abs(self.states['spline_position']-self.spline_before)
-        reward_unit = self.states['speedKmh']
-        reward_ai_angle = 0
+        #reward_speed = np.abs(self.states['spline_position']-self.spline_before)
+        reward_speed = self.states['speedKmh']
+        if reward_speed < 1:
+            reward_speed = 0
         # If distance with centerline > 10m --> negative reward
 
         if dist > 10:
-            reward_ai_pos = 0
+            reward_ai_pos = 1
         # Else, the closer to 0m , the higher the reward 
         else:
             dist_normed= dist/10
-            reward_ai_pos = (1-dist_normed)
+            reward_ai_pos = dist_normed
         #If the angle between the look angle of the car and the AI angle > np.pi/4 --> negative reward
-        if angle > np.pi/9 or angle < -np.pi/9:
-            reward_ai_angle = 0
+        #if angle > np.pi/9 or angle < -np.pi/9:
+        #    reward_ai_angle = 0
 
-        #Add positiv reward for angle diff small
-        if np.abs(angle)<np.pi/36:
-            reward_ai_angle =  (1-np.abs(angle/(np.pi/36))) 
-
+        ##Add positiv reward for angle diff small
+        #if np.abs(angle)<np.pi/36:
+        #    reward_ai_angle =  (1-np.abs(angle/(np.pi/36))) 
+        reward_ai_angle = np.cos(angle) 
         #Maybe Add Reward based on the angle of the steer related to the curvature of the track
        
             
         # Reward step = distance achieved reward + distance to centerline reward + angle with centerline angle reward. If out of road, the reward becomes negativ
-        self.reward_step= reward_unit*(self.out_of_road +reward_ai_pos + reward_ai_angle)
+        self.reward_step= reward_speed*(-reward_ai_pos + reward_ai_angle)
         self.reward_total += self.reward_step
 
     def find_curvature(self):
