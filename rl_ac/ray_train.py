@@ -15,8 +15,8 @@ register_env('Model',  env_creator)
 
 
 tune.run(
-    "PPO", # reinforced learning agent
-    name = "PPO",
+    "SAC", # reinforced learning agent
+    name = "SAC",
     # to resume training from a checkpoint, set the path accordingly:
     #resume = True, # you can resume from checkpoint
     #restore = r'.\ray_results\PPO\PPO_Model_16fc1_00000_0_2022-01-13_18-20-23\checkpoint_000420\checkpoint-420',
@@ -36,16 +36,16 @@ tune.run(
                 },
         #"prioritized_replay": False,
         
-        #"train_batch_size": 64,
-        #"store_buffer_in_checkpoints": True,
-        #"policy_model": {
-        #    "fcnet_hiddens": [64, 64],
-        #    "fcnet_activation": "relu",
-        #    "post_fcnet_hiddens": [],
-        #    "post_fcnet_activation": None,
-        #    "custom_model": None,  # Use this to define a custom policy model.
-        #    "custom_model_config": {},
-        #},
+        "train_batch_size": 64,
+        "store_buffer_in_checkpoints": True,
+        "policy_model": {
+            "fcnet_hiddens": [64, 64],
+            "fcnet_activation": "relu",
+            "post_fcnet_hiddens": [],
+            "post_fcnet_activation": None,
+            "custom_model": None,  # Use this to define a custom policy model.
+            "custom_model_config": {},
+        },
         },
     stop = {
         "timesteps_total": 5_000_000,

@@ -7,6 +7,8 @@ from gym.utils import seeding
 from numpy.core.umath_tests import inner1d
 import time
 import random
+import pandas as pd
+import math
 from ctypes import c_float
 
 class ClipAction(gym.core.ActionWrapper):
@@ -19,10 +21,10 @@ class ClipAction(gym.core.ActionWrapper):
 
     def action(self, action):
         
-        if action[1] > self.last_action+0.02: # 9° 
-            action[1] = self.last_action+0.02
-        if action[1] < self.last_action-0.02:
-            action[1] = self.last_action-0.02
+        if action[1] > self.last_action+0.04: # 9° 
+            action[1] = self.last_action+0.04
+        if action[1] < self.last_action-0.04:
+            action[1] = self.last_action-0.04
         
         return np.array([action[0],np.clip(action[1], self.low, self.high)])
 
@@ -48,14 +50,15 @@ class AC_Env(gym.Env):
         self.info = {}
         self.reward_total= 0
         self.reward_step = 0
-        self.spline_before = 0
+        self.n_obj=0
         self.out_of_road = 1
         self.start_speed = 0
         self.time_check = 0
         self.last_action = 0
         self.collision = 0
-        self.max_steps= 20000
-        # add max_steps if spline_position is bigger than modulo 10%
+        self.max_steps= 100
+        self.spline_start= 0
+        self.offset_spline = 0
         self.wrong_action = 0
         self.count= 0
         
@@ -70,6 +73,8 @@ class AC_Env(gym.Env):
         
         self.obs1d = []
         self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz,self.track_data = init_track_data()
+        self.df =  pd.read_csv("Data/Kevin/dynamic.csv",converters={'position': pd.eval})
+        self.df['position'] =self.df[["WorldPosition_X","WorldPosition_Y","WorldPosition_Z"]].apply(lambda r: np.array(r), axis=1)
 
         # Set these in ALL subclasses
         self.action_space = gym.spaces.Box(
@@ -81,7 +86,7 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(95,), #26 car states + 61 lidar + 8curvatures= 112 obs in float 32 --> 804 bytes per step
+                shape=(97,), #26 car states + 61 lidar + 8curvatures + angle+dist= 112 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
@@ -92,6 +97,7 @@ class AC_Env(gym.Env):
 
         #random_splines = np.arange(0,1,0.05)
         #spline = random.choice(random_splines)
+        #spline= 0.29
         #idx=(np.abs(self.track_data[:,3]-spline)).argmin()
         #_waypoint = FloatArr()
         #_waypoint[0] = self.track_data[idx,0]
@@ -142,11 +148,16 @@ self._dict
         self.reward_total = 0
         self.count= 0
         self.wrong_action = 0
+        self.n_obj = 0
         self.out_of_road= 1
         self.reward_step= 0
         self.start_speed=0
+        self.last_action=0
+        self.max_steps= 100
         self.time_check=time.time()
         self.collision =self._dict['collision_counter']
+        self.spline_start=self.truncate(self.states['spline_position'],2)+0.01
+        self.offset_spline = self.states['spline_position']
         return self.obs1d
     def move(self,action):
         self.controls.change_controls(self.states,action[0],action[1])
@@ -178,12 +189,11 @@ self._dict
         #        self.controls.change_controls(self._dict,1,0)
         #    self.start_speed=1
 
-        if time.time()-self.time_check >10 and self.states['speedKmh']<2:
-            self.done=True
+        #if time.time()-self.time_check >30 and self.states['speedKmh']<2:
+        #    self.done=True
 
         if self.count > self.max_steps:
             self.done=True
-        self.spline_before = self.states['spline_position']
         #Workflow:
         #   send action to the car
         #   Update observations using RAM Data
@@ -192,7 +202,7 @@ self._dict
         if not self.done:
             self.move(action)
             self.update_observations()
-            self.update_reward()
+            self.update_reward_naive()
             self.count+= 1
             self.last_action = action[1]
 
@@ -207,11 +217,17 @@ self._dict
     def update_observations(self):
 
         self.out_of_road=1
+
         self.states,self._dict = self._vehicle.read_states()
+        dist,angle,_ = self.find_nearest()
        
         if self._dict['collision_counter']> self.collision:
             self.out_of_road = 0
             self.done=True
+        for i in self._dict['dirty_level']:
+            if i != 0:
+                self.done=True
+                #self.reward_total -= 100
         if self._dict['dirty_level'][0] != 0:
             self.done=True
 
@@ -232,22 +248,22 @@ self._dict
         else:
             self.obs1d =np.append(self.obs1d,lidar)
         self.obs1d = np.append(self.obs1d,self.find_curvature().astype(np.float32))
+        self.obs1d = np.append(self.obs1d,np.array([dist,angle]).astype(np.float32))
         
 
     def update_reward(self):
-        dist,angle = self.find_nearest()
+        dist,angle,speed = self.find_nearest()
         #reward_speed = np.abs(self.states['spline_position']-self.spline_before)
-        reward_speed = self.states['speedKmh']
-        if reward_speed < 1:
-            reward_speed = 0
+        reward_speed = 1-(np.abs(self.states['speedKmh']-speed)/(speed+1))
+        
         # If distance with centerline > 10m --> negative reward
 
         if dist > 10:
-            reward_ai_pos = 1
+            reward_ai_pos = 0
         # Else, the closer to 0m , the higher the reward 
         else:
             dist_normed= dist/10
-            reward_ai_pos = dist_normed
+            reward_ai_pos = 1-dist_normed
         #If the angle between the look angle of the car and the AI angle > np.pi/4 --> negative reward
         #if angle > np.pi/9 or angle < -np.pi/9:
         #    reward_ai_angle = 0
@@ -260,8 +276,36 @@ self._dict
        
             
         # Reward step = distance achieved reward + distance to centerline reward + angle with centerline angle reward. If out of road, the reward becomes negativ
-        self.reward_step= reward_speed*(-reward_ai_pos + reward_ai_angle)
+        self.reward_step= (2*reward_speed+ reward_ai_pos + 3*reward_ai_angle)/6
+        if self.states['speedKmh'] < 1:
+            self.reward_step=0
         self.reward_total += self.reward_step
+    def update_reward_naive(self):
+
+        
+
+        dist_goal_before,dist_goal_after= self.find_progression()
+        
+        self.reward_step= self.n_obj+ (1- (dist_goal_after/(dist_goal_after+dist_goal_before)))
+
+        self.reward_total += self.reward_step
+
+    def find_progression(self):
+
+        spline_goal_before =  self.truncate(self.states['spline_position'],2)
+        spline_goal_after = spline_goal_before+0.01
+        idx_goal_before = (np.abs(self.track_data[:,3]-spline_goal_before)).argmin()
+        idx_goal_after = (np.abs(self.track_data[:,3]-spline_goal_after)).argmin()
+        pos_goal_before = self.track_data[idx_goal_before,0:3]
+        pos_goal_after = self.track_data[idx_goal_after,0:3]
+        dist_goal_before = np.linalg.norm(self.states['position']-pos_goal_before)
+        dist_goal_after = np.linalg.norm(pos_goal_after-self.states['position'])
+        if spline_goal_before - self.spline_start > 0 :
+            self.n_obj+= 1
+            self.spline_start=spline_goal_after
+            self.max_steps+= 50
+
+        return dist_goal_before,dist_goal_after
 
     def find_curvature(self):
         idx=(np.abs(self.track_data[:,3]-self.states['spline_position'])).argmin()
@@ -291,7 +335,16 @@ self._dict
         look = self.states['look']
         ideal = self.normal_xyz[minimum_norm]
         error = self.angle_clockwise(look,[ideal[0],ideal[1],ideal[2]])
-        return norm,error
+
+
+        spline_kevin = (np.abs(self.df.NormalizedSplinePosition-self.states['spline_position'])).argmin()
+        speed = self.df.Speed.iloc[[spline_kevin]]
+
+        #goal_spline =  self.truncate(self.states['spline_position'],1)
+        #goal_position = 
+
+
+        return norm,error,speed.values[0]
 
     def angle_clockwise(self,A,B):
         dot = np.dot(A,B)
@@ -302,6 +355,10 @@ self._dict
             return inner
         else: # if the det > 0 then A is immediately clockwise of B
             return -inner
+
+    def truncate(self,number, digits) -> float:
+        stepper = 10.0 ** digits
+        return math.trunc(stepper * number) / stepper
 
     
 
