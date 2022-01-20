@@ -51,16 +51,17 @@ class AC_Env(gym.Env):
         self.reward_total= 0
         self.reward_step = 0
         self.n_obj=0
-        self.out_of_road = 1
+        self.out_of_road = 0
         self.start_speed = 0
         self.time_check = 0
         self.last_action = 0
         self.collision = 0
-        self.max_steps= 100
+        self.max_steps= 300
         self.spline_start= 0
         self.offset_spline = 0
         self.wrong_action = 0
         self.count= 0
+        self.time_section = 0
         
         
         self._vehicle =  sim_info.SimInfo()
@@ -86,7 +87,7 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(97,), #26 car states + 61 lidar + 8curvatures + angle+dist= 112 obs in float 32 --> 804 bytes per step
+                shape=(84,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_action= 84 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
@@ -149,11 +150,12 @@ self._dict
         self.count= 0
         self.wrong_action = 0
         self.n_obj = 0
-        self.out_of_road= 1
+        self.out_of_road= 0
         self.reward_step= 0
         self.start_speed=0
         self.last_action=0
-        self.max_steps= 100
+        self.max_steps= 900
+        self.time_section = time.time()
         self.time_check=time.time()
         self.collision =self._dict['collision_counter']
         self.spline_start=self.truncate(self.states['spline_position'],2)+0.01
@@ -216,30 +218,32 @@ self._dict
 
     def update_observations(self):
 
-        self.out_of_road=1
+        self.out_of_road=0
 
         self.states,self._dict = self._vehicle.read_states()
         dist,angle,_ = self.find_nearest()
        
         if self._dict['collision_counter']> self.collision:
-            self.out_of_road = 0
+            self.out_of_road = 1
             self.done=True
         for i in self._dict['dirty_level']:
             if i != 0:
                 self.done=True
-                #self.reward_total -= 100
+                self.out_of_road = 1
         if self._dict['dirty_level'][0] != 0:
             self.done=True
 
         self.obs1d = np.array([])
-        self.obs1d = sim_info.states_to_1d_vector(self.states)
+        self.obs ={k:self.states[k] for k in ('velocity','acceleration') if k in self.states}
+        self.obs1d = sim_info.states_to_1d_vector(self.obs)
+        self.obs1d = self.obs1d =np.append(self.obs1d,np.array([self.last_action]).astype(np.float32))
         
         #Compute the distance with the border of the track
         lidar= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
         
         # if len(lidar)< 61, then the car is out of track --> add 0 to have data consistency
         if lidar.shape[0]< 61:
-            self.out_of_road= 0
+            self.out_of_road= 1
             self.wrong_action +=1
             self.obs1d =np.append(self.obs1d,lidar)
             self.obs1d =np.append(self.obs1d,np.zeros(61-lidar.shape[0]).astype(np.float32))
@@ -285,8 +289,21 @@ self._dict
         
 
         dist_goal_before,dist_goal_after= self.find_progression()
+        time_in_section= time.time()-self.time_section
         
-        self.reward_step= self.n_obj+ (1- (dist_goal_after/(dist_goal_after+dist_goal_before)))
+        self.reward_step= self.n_obj+ (1- (dist_goal_after/(dist_goal_after+dist_goal_before)))*(1-time_in_section/10)
+        #spline_kevin = (np.abs(self.df.NormalizedSplinePosition-self.states['spline_position'])).argmin()
+
+        #speed = self.df.Speed.iloc[[spline_kevin]].values[0]
+        #x = 1-(np.abs(self.states['speedKmh']-speed)/(speed+1))
+
+        #speed_reward = -0.1*np.exp(30*np.power((2*x-1),4)-32)+0.6*np.exp(np.power(x,8))-0.6
+        #self.reward_step +=speed_reward
+        if self.states['speedKmh'] < 1:
+            self.reward_step=0
+        if self.out_of_road:
+            self.reward_step-=20
+
 
         self.reward_total += self.reward_step
 
@@ -303,7 +320,8 @@ self._dict
         if spline_goal_before - self.spline_start > 0 :
             self.n_obj+= 1
             self.spline_start=spline_goal_after
-            self.max_steps+= 50
+            self.max_steps+= 300
+            self.time_section=time.time()
 
         return dist_goal_before,dist_goal_after
 
@@ -311,7 +329,7 @@ self._dict
         idx=(np.abs(self.track_data[:,3]-self.states['spline_position'])).argmin()
         #Return the curvature radius on the current location
         curvatures = np.array([])
-        for i in range(8):
+        for i in range(14):
             if idx + i >= len(self.track_data[:,11]):
                 new_idx = (idx + i)-len(self.track_data[:,11])
                 curvatures = np.append(curvatures,1/(self.track_data[new_idx,11]*self.track_data[new_idx,7]))
