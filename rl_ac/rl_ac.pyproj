@@ -32,6 +32,7 @@
     <Compile Include="lidar.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="ray_rollout.py" />
     <Compile Include="ray_train.py">
       <SubType>Code</SubType>
     </Compile>

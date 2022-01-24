@@ -8,7 +8,7 @@ import time
 from numpy.core.umath_tests import inner1d
 from numpy import sin, cos, tan, arctan, pi
 import pandas as pd
-# tune more in bang bang method !!!!
+
 class VehiclePIDController():
     """
     VehiclePIDController is the combination of two PID controllers (lateral and longitudinal) to perform the
@@ -63,7 +63,7 @@ class VehiclePIDController():
         :param waypoint: target location encoded as a waypoint
         :return: distance (in meters) to the waypoint
         """
-        _,self._vehicle = self.info.read_states()
+        self._vehicle,_ = self.info.read_states()
         #print(self._vehicle['spline_position'])
         
         
@@ -76,7 +76,7 @@ class VehiclePIDController():
         input = self._lon_controller.run_step(self._vehicle,speed)
         steering = self._lat_controller.run_step(self._vehicle,waypoint,yaw)
         control = self._controls
-        control.change_controls(self._vehicle, input,steering)
+        #control.change_controls(self._vehicle, input,steering)
 
         return input,steering
 

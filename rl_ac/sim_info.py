@@ -23,7 +23,9 @@ features_needed = ['gear',
                    'local_velocity',
                    'local_angular_velocity',
                    'angular_velocity',
-                   'spline_position']
+                   'spline_position',
+                   'lap_time_ms',
+                   'best_lap_time_ms']
 
 
 class AP_wheel(ctypes.Structure):
@@ -135,6 +137,12 @@ class SPageSimControls(ctypes.Structure):
         ('disable_collisions', c_bool), 
         ('delay_ms', c_uint8), 
     ]
+class SPageLineControls(ctypes.Structure):
+    _fields_ = [
+        ('from_', c_float * 3),  
+        ('to', c_float * 3), 
+        ('color', c_uint32), 
+    ]
 
 class SimInfo:
     def __init__(self,file ="AcTools.CSP.ModuleLDM.AIProject.Car0.v0" ):
@@ -209,6 +217,7 @@ class SimControl:
         self._controls = mmap.mmap(0, ctypes.sizeof(SPageFileControls), file)
         self.controls =SPageFileControls.from_buffer(self._controls)
         self.controls.clutch=1
+        self.time_check = time.time()
         self.last_gear = 1
         self.treshold_up = 7500 
         self.treshold_dn = 4600
@@ -243,22 +252,21 @@ class SimControl:
         self.controls.gear_up = 0
         self.controls.teleport_to = 0
         self.controls.gear_dn = 0
-        if gas > 0:
-            if states['gear'] == 1  and states['rpm']> 1500:
-                self.change_gear(0)
+        if time.time() -self.time_check>0.5:
+            if gas > 0:
+                if states['gear'] == 1  and states['rpm']> 1500:
+                    self.time_check = time.time()
+                    self.change_gear(0)
                 
-            if states['rpm'] > self.treshold_up and states['gear'] != 1 :
-                self.change_gear(0) #increase
+                if states['rpm'] > self.treshold_up and states['gear'] != 1 :
+                    self.time_check = time.time()
+                    self.change_gear(0) #increase
 
-        if brake > 0:
-            if states['rpm'] < self.treshold_dn and (states['gear'] not in [1,2]) :
-                self.change_gear(1) #decrease
+            if brake > 0:
+                if states['rpm'] < self.treshold_dn and (states['gear'] not in [1,2]) :
+                    self.time_check = time.time()
+                    self.change_gear(1) #decrease
                 
-            #if states['speedKmh'] < 1:
-            #   if states['gear']== 0:
-            #        self.change_gear(0)
-            #   if states['gear'] == 2: 
-            #       self.change_gear(1)
 
         self.update_control()
 
@@ -316,6 +324,40 @@ class SimStates:
         time.sleep(0.1)
         self.sim.restart_session=False
         self.update_sim()
+        time.sleep(3)
+
+class LineControl:
+    def __init__(self,file = "AcTools.CSP.ModuleLDM.AIProject.Lines.v0"):
+        self.file = file
+        self.init_file()
+        self._line = mmap.mmap(0, ctypes.sizeof(SPageLineControls), self.file)
+        self.line =SPageLineControls.from_buffer(self._line)
+
+    def init_file(self):
+        p =subprocess.Popen('Drivemaster.AiProjectWriter.exe {}'.format(self.file))
+        time.sleep(2)
+        p.terminate()
+        p.kill()
+    def update_line(self):
+        new_line =bytearray(self.line)
+        self._line.seek(0)
+        self._line.write(new_line)
+    def draw(self,from_= c_float * 3,to=c_float * 3):
+        self.line.from_ = from_
+        self.line.to = to
+        self.line.color = 8
+        self.update_line()
+    def conversion(self,from_,to):
+        FloatArr = c_float * 3
+        _from = FloatArr()
+        _to = FloatArr()
+        _from[0]=from_[0]
+        _from[1]=from_[1]
+        _from[2]=from_[2]
+        _to[0]=to[0]
+        _to[1]=to[1]
+        _to[2]=to[2]
+        self.draw(_from,_to)
 
 
 def teleport(controller,control,info):
@@ -342,6 +384,7 @@ def PID_unit(states,df,info,control,sim):
     controller = VehiclePIDController(info,states,control,df,sim)
     #sim.speed()
     #teleport(controller,control,info)
+    line= LineControl()
     while controller._vehicle['best_lap_time_ms'] > 59400 or controller._vehicle['best_lap_time_ms'] == 0:
         #sim.pause()
         #_time = time.time()
@@ -349,7 +392,12 @@ def PID_unit(states,df,info,control,sim):
         #    input,steering =controller.run_step()
         #sim.play()
 
-        distances = compute_lidar_distances(states["look"],states["position"],info.sideleft_xy,info.sideright_xy)
+        distances,lidar,centerline = compute_lidar_distances(states["look"],states["position"],info.sideleft_xy,info.sideright_xy)
+        count= 0
+        for i in lidar:
+            from_ = np.array([i[0],states['position'][1],i[1]])
+            line.conversion(from_,[i[0],states['position'][1]+10,i[1]])
+            count+=1
         
         controller.run_step()
         

@@ -27,11 +27,10 @@ class ClipAction(gym.core.ActionWrapper):
 
     def action(self, action):
         
-        if action[1] > self.last_action+0.02: # 9° 
-            action[1] = self.last_action+0.02
-        if action[1] < self.last_action-0.02:
-            action[1] = self.last_action-0.02
-        
+        if action[1] > self.last_action+0.04: # 9° 
+            action[1] = self.last_action+0.04
+        if action[1] < self.last_action-0.04:
+            action[1] = self.last_action-0.04
         
         return np.array([action[0],np.clip(action[1], self.low, self.high)])
 
@@ -107,27 +106,27 @@ class AC_Env(gym.Env):
         FloatArr = c_float * 3
         
 
-        random_splines = np.arange(0,1,0.05)
-        spline = random.choice(random_splines)
+        #random_splines = np.arange(0,1,0.05)
+        #spline = random.choice(random_splines)
         #spline= 0.0
-        idx=(np.abs(self.track_data[:,3]-spline)).argmin()
-        _waypoint = FloatArr()
-        _waypoint[0] = self.track_data[idx,0]
-        _waypoint[1] = self.track_data[idx,1]
-        _waypoint[2] =  self.track_data[idx,2]
-        _look = FloatArr()
-        _look[0] = -self.track_data[idx,16]
-        _look[1] = self.track_data[idx,17]
-        _look[2] = -self.track_data[idx,18]
-
+        #idx=(np.abs(self.track_data[:,3]-spline)).argmin()
         #_waypoint = FloatArr()
-        #_waypoint[0] = 322.2773742675781
-        #_waypoint[1] = 192.01971435546875
-        #_waypoint[2] =  84.85726165771484
+        #_waypoint[0] = self.track_data[idx,0]
+        #_waypoint[1] = self.track_data[idx,1]
+        #_waypoint[2] =  self.track_data[idx,2]
         #_look = FloatArr()
-        #_look[0] =-0.9996861815452576
-        #_look[1] = 0.02443912997841835
-        #_look[2] = -0.005505245644599199
+        #_look[0] = -self.track_data[idx,16]
+        #_look[1] = self.track_data[idx,17]
+        #_look[2] = -self.track_data[idx,18]
+
+        _waypoint = FloatArr()
+        _waypoint[0] = 322.2773742675781
+        _waypoint[1] = 192.01971435546875
+        _waypoint[2] =  84.85726165771484
+        _look = FloatArr()
+        _look[0] =-0.9996861815452576
+        _look[1] = 0.02443912997841835
+        _look[2] = -0.005505245644599199
 
 
         self.init_pos =  _waypoint
@@ -286,7 +285,6 @@ self._dict
             self.obs1d =np.append(self.obs1d,lidar)
         self.obs1d = np.append(self.obs1d,self.find_curvature().astype(np.float32))
         self.obs1d = np.append(self.obs1d,np.array([dist,angle]).astype(np.float32))
-        self.obs1d=np.nan_to_num(self.obs1d)
         
 
     def update_reward(self):
@@ -329,21 +327,19 @@ self._dict
             time_reward += self.n_obj
         
         self.reward_step= self.n_obj+ (1- (dist_goal_after/(dist_goal_after+dist_goal_before)))*(1- time_reward)
-        if self.states['speedKmh']>5:
 
-            spline_kevin = (np.abs(self.df.NormalizedSplinePosition-self.states['spline_position'])).argmin()
+        #spline_kevin = (np.abs(self.df.NormalizedSplinePosition-self.states['spline_position'])).argmin()
 
-            speed = self.df.Speed.iloc[[spline_kevin]].values[0]
-            x = 1-(np.abs(self.states['speedKmh']-speed)/(speed+1))
+        #speed = self.df.Speed.iloc[[spline_kevin]].values[0]
+        #x = 1-(np.abs(self.states['speedKmh']-speed)/(speed+1))
 
-            speed_reward = -0.1*np.exp(30*np.power((2*x-1),4)-32)+0.6*np.exp(np.power(x,8))-0.6
-            self.reward_step +=speed_reward*self.n_obj*10
-
+        #speed_reward = -0.1*np.exp(30*np.power((2*x-1),4)-32)+0.6*np.exp(np.power(x,8))-0.6
+        #self.reward_step +=speed_reward
         if self.states['speedKmh'] < 1:
             self.reward_step=0
-
         if self.out_of_road:
             self.reward_step-=20
+
 
         self.reward_total += self.reward_step
 

@@ -415,11 +415,9 @@ def compute_lidar_distances(look,position,sideleft_xy,sideright_xy):
 
 
     size = sideleft_xy.shape[0]
-    #p1x = centerline_xy[id,0]
-    #p1y = centerline_xy[id,1]
 
     intersect_type = np.single
-    #centerline_xy = position vector
+
     # vectorize intersection computation
     centerline_xy = [position[0],-position[2]]
     p1_array = [centerline_xy[0], centerline_xy[1]]
@@ -452,4 +450,4 @@ def compute_lidar_distances(look,position,sideleft_xy,sideright_xy):
         maximum= max(lidar_distances)
     arr = np.interp(lidar_distances, [0, maximum], [-1, 1])
     arr = arr.astype(np.float32)
-    return arr
+    return arr,lidar_points,centerline_xy
