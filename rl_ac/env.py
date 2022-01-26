@@ -337,7 +337,6 @@ class AC_Env(gym.Env):
             self.wrong_action +=1
             self.obs1d =np.append(self.obs1d,lidar)
             self.obs1d =np.append(self.obs1d,np.zeros(61-lidar.shape[0]).astype(np.float32))
-            self.done=True
         else:
             self.obs1d =np.append(self.obs1d,lidar)
         self.obs1d = np.append(self.obs1d,self.find_curvature().astype(np.float32))
@@ -388,10 +387,10 @@ class AC_Env(gym.Env):
         time_reward = time_in_section/10
 
         #If the car stayed too long in one segment, then the reward is decreasing
-        if time_in_section/10 >0.6:
+        if time_in_section/10 >0.3:
             time_reward += self.n_obj
         
-        # The nearer to the segment end/goal, the biggest the reward
+        # The nearer to the segment end/goal, the biggest the reward 
         self.reward_step= self.n_obj+ (1- (dist_goal_after/(dist_goal_after+dist_goal_before)))*(1- time_reward)
 
         #The reward_speed term has been added to accentuate the fact that it's better to drive as fast as possible
@@ -402,14 +401,16 @@ class AC_Env(gym.Env):
             x = self.states['speedKmh']/speed
 
             speed_reward = -0.1*np.exp(30*np.power((2*x-1),4)-32)+0.6*np.exp(np.power(x,2))-0.5
-            self.reward_step +=(speed_reward*max(self.n_obj,1))
+            self.reward_step +=(speed_reward*max([self.n_obj,1]))
 
         
 
         #When out of the track, the reward becomes negative to indicate that it's not a good way to drive
         if self.out_of_road:
-            self.reward_step-=20
+            self.reward_step-=50
 
+        if self.states['speedKmh'] <1:
+            self.reward_step = 0
         self.reward_total += self.reward_step
 
     def find_progression(self):

@@ -26,18 +26,18 @@ tune.run(
     config={
         "env": 'Model',
         "store_buffer_in_checkpoints": True,
-        "num_gpus": 0.3,
+        "num_gpus": 0.5,
         "num_workers": 1,
-        "num_cpus_per_worker": 8,
+        "num_cpus_per_worker": 12,
         "framework": "tf",
-        "train_batch_size": 256,
-        "timesteps_per_iteration": 200,
-        "prioritized_replay": True,
+        #"train_batch_size": 128,
+        "timesteps_per_iteration": 256,
+        #"prioritized_replay": True,
         "lr": 0.001,
         "env_config":{
-            "max_steps": 500,
+            "max_steps": 300,
             "reward_speed_prop":True,
-            "random_tp":True,
+            "random_tp":False,
             },
 
         "policy_model": {
