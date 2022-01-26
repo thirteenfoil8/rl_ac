@@ -13,6 +13,7 @@ import multiprocessing
 import subprocess
 import matplotlib.pyplot as plt
 from lidar import init_track_data,compute_lidar_distances
+#Features_needed for the PID controller
 features_needed = ['gear',
                    'rpm',
                    'speedKmh',
@@ -27,7 +28,7 @@ features_needed = ['gear',
                    'lap_time_ms',
                    'best_lap_time_ms']
 
-
+#Stucture of 1 wheel
 class AP_wheel(ctypes.Structure):
     _pack_ = 4
     _fields_ = [('wheel_position', c_float * 3),
@@ -50,6 +51,8 @@ class AP_wheel(ctypes.Structure):
         ('nd_slip', c_float ),
         ('sideways_velocity', c_float),
         ]
+
+#Structure of the car
 class SPageFilePhysics(ctypes.Structure):
     _pack_ = 4
     _fields_ = [
@@ -94,6 +97,8 @@ controls_needed = ['gas',
                    'break',
                    'steer',
                    'gear_up']
+
+#Structure of the car controls
 class SPageFileControls(ctypes.Structure):
     _pack_ = 4
     _fields_ = [
@@ -130,6 +135,7 @@ class SPageFileControls(ctypes.Structure):
         ('teleport_dir', c_float * 3),
         
     ]
+#Structure of the simulation control
 class SPageSimControls(ctypes.Structure):
     _fields_ = [
         ('pause', c_bool),  
@@ -137,23 +143,43 @@ class SPageSimControls(ctypes.Structure):
         ('disable_collisions', c_bool), 
         ('delay_ms', c_uint8), 
     ]
+
+#Structure of the line drawing control
 class SPageLineControls(ctypes.Structure):
     _fields_ = [
-        ('from_', c_float * 3),  
-        ('to', c_float * 3), 
+        ('From', c_float * 3),  
+        ('To', c_float * 3), 
         ('color', c_uint32), 
     ]
 
+
+
+#For each of the classes above, the idea is the same:
+#create a Random Access Memory shared files in which we read/write bytes in order to obserse/control the car
+
+
 class SimInfo:
+    """
+        This Class is related to the states of the car
+    """
     def __init__(self,file ="AcTools.CSP.ModuleLDM.AIProject.Car0.v0" ):
 
         self._acpmf_physics = mmap.mmap(0, ctypes.sizeof(SPageFilePhysics), file)
         self.physics = SPageFilePhysics.from_buffer(self._acpmf_physics)
         self.init_pos = self.physics.position
         self.init_dir = self.physics.look
+        #Get the reference data (track border, ...)
         self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz,self.track_data = init_track_data()
 
     def read_states(self):
+        """
+            Read the states of the car inside the shared memory files and copy them inside a dictionnary
+
+            Returns:
+                States (dict(floats)): Return only the features that are needed
+                _dict (dict(floats)): Return all the features
+
+        """
         states = dict.fromkeys(features_needed, 0)
         _struct = self.physics
         _dict= self.getdict(_struct)
@@ -176,6 +202,9 @@ class SimInfo:
              result[field] = value
         return result
     def unified_wheels(self,_dict):
+        """
+        This function update _dict to ensure that all wheels states are well collected
+        """
         keys= ['wheel_position',
         'contact_point',
         'contact_normal',
@@ -187,7 +216,7 @@ class SimInfo:
         'pressure',
         'angular_velocity',
         'wear',
-        'dirty_level', #delete
+        'dirty_level', 
         'core_temperature',
         'camber_rad',
         'disc_temperature',
@@ -219,7 +248,11 @@ class SimControl:
         self.controls.clutch=1
         self.time_check = time.time()
         self.last_gear = 1
+
+        #RPM threshold to gear up
         self.treshold_up = 7500 
+
+        #RPM threshold to gear down
         self.treshold_dn = 4600
         self.changed_gear=False
         self.controls.autoclutch_on_change=True
@@ -231,6 +264,9 @@ class SimControl:
         p.terminate()
         p.kill()
     def update_control(self):
+        """
+            Write inside shared memory file to update car controls (throttle/brake, Steering wheel)
+        """
         new_controls =bytearray(self.controls)
         self._controls.seek(0)
         self._controls.write(new_controls)
@@ -239,6 +275,7 @@ class SimControl:
         self.controls.clutch=1
         gas = 0
         brake = 0 
+        #if input >0 --> gas , else --> brake
         if input > 0:
             gas = input
         elif input < 0:
@@ -254,6 +291,7 @@ class SimControl:
         self.controls.gear_dn = 0
         if time.time() -self.time_check>0.5:
             if gas > 0:
+                #If the agent applies throttle, then checked if gear up is needed
                 if states['gear'] == 1  and states['rpm']> 1500:
                     self.time_check = time.time()
                     self.change_gear(0)
@@ -263,6 +301,7 @@ class SimControl:
                     self.change_gear(0) #increase
 
             if brake > 0:
+                #If the agent applies braking, then checked if gear down is needed
                 if states['rpm'] < self.treshold_dn and (states['gear'] not in [1,2]) :
                     self.time_check = time.time()
                     self.change_gear(1) #decrease
@@ -271,6 +310,12 @@ class SimControl:
         self.update_control()
 
     def teleport(self,position= c_float * 3,dir=c_float * 3):
+        """Teleport the car somewhere on the track
+
+        Args:
+            position (c_float * 3): Position where the car has to be teleported
+            dir (c_float * 3): Direction of the car (Looking angles)
+       """
         self.controls.teleport_to = 2
         self.controls.teleport_pos = position
         self.controls.teleport_dir = dir
@@ -342,25 +387,36 @@ class LineControl:
         new_line =bytearray(self.line)
         self._line.seek(0)
         self._line.write(new_line)
-    def draw(self,from_= c_float * 3,to=c_float * 3):
-        self.line.from_ = from_
-        self.line.to = to
-        self.line.color = 8
+    def draw(self,From= c_float * 3,To=c_float * 3):
+        """ Draw the line From  ---------->   To
+        """
+        self.line.From = From
+        self.line.To = To
+        self.line.color = 1000
         self.update_line()
-    def conversion(self,from_,to):
+    def conversion(self,From,To):
+        print(From,To)
         FloatArr = c_float * 3
         _from = FloatArr()
-        _to = FloatArr()
-        _from[0]=from_[0]
-        _from[1]=from_[1]
-        _from[2]=from_[2]
-        _to[0]=to[0]
-        _to[1]=to[1]
-        _to[2]=to[2]
-        self.draw(_from,_to)
+        _To = FloatArr()
+        _from[0]=From[0]
+        _from[1]=From[1]
+        _from[2]=From[2]
+        _To[0]=To[0]
+        _To[1]=To[1]
+        _To[2]=To[2]
+        self.draw(_from,_To)
 
 
 def teleport(controller,control,info):
+    """
+        Function used for the PID Controller in order to teleport the car to the nearest reference position
+        Args:
+                controller (class(VehiclePIDController)): VehiclePIDController object
+                control (class(SimControl)): SimControl object
+                info (class(SimStates)): SimInfo object
+
+    """
     states,_ = info.read_states()
     waypoint,_,_ =controller.find_nearest()
     waypoint= waypoint.tolist()
@@ -381,34 +437,28 @@ def teleport(controller,control,info):
 
 
 def PID_unit(states,df,info,control,sim):
+    """ Function that computes steps until the lap time is short
+    """
+
     controller = VehiclePIDController(info,states,control,df,sim)
-    #sim.speed()
-    #teleport(controller,control,info)
-    line= LineControl()
-    while controller._vehicle['best_lap_time_ms'] > 59400 or controller._vehicle['best_lap_time_ms'] == 0:
-        #sim.pause()
-        #_time = time.time()
-        #while time.time()- _time <0.3:
-        #    input,steering =controller.run_step()
-        #sim.play()
-
-        distances,lidar,centerline = compute_lidar_distances(states["look"],states["position"],info.sideleft_xy,info.sideright_xy)
-        count= 0
-        for i in lidar:
-            from_ = np.array([i[0],states['position'][1],i[1]])
-            line.conversion(from_,[i[0],states['position'][1]+10,i[1]])
-            count+=1
-        
-        controller.run_step()
-        
-
+    
+    run_pid(controller,info)
     control.change_controls(states,0,0) 
 
 
 #@ray.remote
-def run_pid(controller):
+def run_pid(controller,info):
+    """ Run the PID controller
+    """
+    Line = LineControl()
     while controller._vehicle['best_lap_time_ms'] > 59400 or controller._vehicle['best_lap_time_ms'] == 0:
         input,steering =controller.run_step()
+        distances,_,_ = compute_lidar_distances(controller._vehicle["look"],controller._vehicle["position"],info.sideleft_xy,info.sideright_xy)
+        print(distances)
+        #pos = controller._vehicle['position']
+        #pos2 = pos[0],pos[1]+10,pos[2]
+        #Line.conversion(pos,pos2)
+
 
 
 def PID_multiple(states_list,df,info_list,control_list,controller_list,sim,nbr_car):
@@ -416,15 +466,6 @@ def PID_multiple(states_list,df,info_list,control_list,controller_list,sim,nbr_c
     
     for i in range(nbr_car):
         best_lap_time.append(states_list[i]['best_lap_time_ms'])
-    #p1 = multiprocessing.Process(target=run_pid, args=(controller_list[0],))
-    #p2 = multiprocessing.Process(target=run_pid, args=(controller_list[1],))
-
-    #p1.start()
-    #p2.start()
-
-    #ray.register_class(VehiclePIDController)
-    #ray.init()
-    #ray.get(run_pid.remote(controller_list[0]),run_pid.remote(controller_list[1]))
     best_lap_time = []
     
     for i in range(nbr_car):
@@ -434,6 +475,7 @@ def PID_multiple(states_list,df,info_list,control_list,controller_list,sim,nbr_c
             controller_list[i].run_step()
     for i in range(nbr_car):
         control_list[i].change_controls(states,0,0) 
+
 def create_cars(nbr_car=1):
     template_name = "AcTools.CSP.ModuleLDM.AIProject.CarControls0.v0"
     final_control =""
@@ -481,6 +523,8 @@ def print_size_states(states):
             count+=1
     print(count)
 def states_to_1d_vector(states):
+    """ Convert The states dictionary to a 1D np array of float32
+    """
     new_list = list(states.values())
     final_list = []
     for i in new_list:

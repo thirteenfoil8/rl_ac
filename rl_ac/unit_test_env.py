@@ -1,5 +1,10 @@
 from env import AC_Env
-env= AC_Env(1)
+env_config={
+            "max_steps": 500,
+            "reward_speed_prop":False,
+            "random_tp":False,
+            }
+env= AC_Env(env_config)
 #env.find_nearest()
 #env.reset()
 #env.update_reward_naive()

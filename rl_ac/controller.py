@@ -17,7 +17,11 @@ class VehiclePIDController():
 
     def __init__(self,info, states,control,df,sim, args_lateral=None, args_longitudinal=None):
         """
-        :param vehicle: actor to apply to local planner logic onto
+        :param info: SimInfo class
+        :param states: states of the car (dict)
+        :param control: SimControl class
+        :param df: Reference pandas DF
+        :param sim: SimStates class
         :param args_lateral: dictionary of arguments to set the lateral PID controller using the following semantics:
                              K_P -- Proportional term
                              K_D -- Differential term
@@ -29,13 +33,8 @@ class VehiclePIDController():
                              K_I -- Integral term
         """
         if not args_lateral:
-            
-            #using ziegler-nichols, We have Ku = 0.3 Tu = 0.8
-             #Then K_P =0.9 ,K_D = 0.075, K_I = 0.3
             args_lateral = {'K_P':3, 'K_D': 0.5, 'K_I':  0}
         if not args_longitudinal:
-             #using ziegler-nichols, We have Ku = 1 Tu = 1
-             #Then K_P =0.6 ,K_D = 0.075, K_I = 0.3
             args_longitudinal = {'K_P': 0.3, 'K_D': 0, 'K_I': 10}
         self.info = info
         self._vehicle = states
@@ -59,16 +58,13 @@ class VehiclePIDController():
         """
         Execute one step of control invoking both lateral and longitudinal PID controllers to reach a target waypoint
         at a given target_speed.
-        :param target_speed: desired vehicle speed
-        :param waypoint: target location encoded as a waypoint
-        :return: distance (in meters) to the waypoint
+
+        Return:
+            input (float): action gas/brake
+            steering (float): action steering wheel
         """
+        #
         self._vehicle,_ = self.info.read_states()
-        #print(self._vehicle['spline_position'])
-        
-        
-        
-        
         waypoint,speed,yaw=self.find_nearest()
         self.data_collecting()
         
@@ -76,8 +72,6 @@ class VehiclePIDController():
         input = self._lon_controller.run_step(self._vehicle,speed)
         steering = self._lat_controller.run_step(self._vehicle,waypoint,yaw)
         control = self._controls
-        #control.change_controls(self._vehicle, input,steering)
-
         return input,steering
 
     def data_collecting(self):
@@ -98,7 +92,6 @@ class VehiclePIDController():
 
     def next_target(self):
         waypoint,speed= self.find_nearest()
-
         return waypoint,speed
     def angle_clockwise(self,A,B):
         dot = np.dot(A,B)
@@ -110,29 +103,28 @@ class VehiclePIDController():
         else: # if the det > 0 then A is immediately clockwise of B
             return 2*np.pi-inner
 
-
-    def in_look(self,deltas):
-        look = self._vehicle['look']
-        
-        deltas_normed=deltas/np.sqrt(inner1d(np.stack(deltas,axis = 0),np.stack(deltas,axis = 0)))
-        
-        angle = deltas_normed.apply(lambda r : self.angle_clockwise(look, r))
-        angle_selected= angle[(angle < np.pi/4) | (angle > 7*np.pi/4)]
-        return angle_selected.index
     def horizon_selection(self,norms):
+        """
+        Function that gives the next horizon index of the reference (50 meter in front of the car)
+
+        Returns:
+            minimum_norm (float): next position index 
+            gas_norm (float): next gas index 
+            
+        """
         horizon = 48
         horizon_gas= 10
         minimum_norm = norms.argmin()
         gas_norm = norms.argmin()
         turn= minimum_norm+horizon/8
         self.speed_multiplier = 1.01
-        # TODO Try PI + full steering available
         self._lat_controller._K_P = 0.5
         self._lat_controller._K_D = 0.1
         self._lat_controller._K_I = 10
         self._lat_controller.max_steer = 1
         if turn>= self.df.shape[0]:
             turn = turn -self.df.shape[0]
+        #Small curve PID hyperparameter update
         if np.abs(self.df.LocalAngularVelocity_Y[turn]) > 0.03:
             minimum_norm =  turn
             self._lat_controller.max_steer = 1
@@ -140,6 +132,7 @@ class VehiclePIDController():
             self._lat_controller._K_P = 2
             self._lat_controller._K_D = 0.5
             self._lat_controller._K_I = 0
+            #Sharp curve PID hyperparameter update
             if np.abs(self.df.LocalAngularVelocity_Y[turn]) > 0.10:
                 self.speed_multiplier = 1.00
                 self._lat_controller._K_P = 3
@@ -153,7 +146,15 @@ class VehiclePIDController():
         else: 
             gas_norm = gas_norm+horizon_gas
         return minimum_norm,gas_norm
+
     def find_nearest(self):
+        """Use the horizon selection output to find the related values (based on idex)
+            Returns:
+            nodes[minimum_norm] (np.array(3* np.float32)): Next position to target
+            self.df.Speed[gas_norm] (np.float32) : Next speed to achieve
+            self.df.LocalAngularVelocity_Y[minimum_norm] (float32): Next angular velocity (curve sharpness)
+
+        """
         x,y,z = self._vehicle['position']
         node = np.array([x,y,z])
         nodes = self.df.position
@@ -222,13 +223,6 @@ class PIDLongitudinalController():
             _ie = 0.0
         return np.clip((self._K_P * _e) + (self._K_D * _de / self._dt) + (self._K_I * _ie * self._dt), -1, 1.0)
 
-def wrap2pi(angle):
-    wrapped_angle = np.remainder(angle, 2*pi)
-    if wrapped_angle > pi:
-        wrapped2pi = -2*pi + wrapped_angle
-    else:
-        wrapped2pi = wrapped_angle
-    return wrapped2pi
 
 class PIDLateralController():
     """
@@ -294,29 +288,6 @@ class PIDLateralController():
         else: # if the det > 0 then A is immediately clockwise of B
             return -inner
 
-    def path_following_controller(self,x, y, yaw, v, x_target, y_target, yaw_target):
-        ''' 
-        E-Racing's Steering Controller
-    
-        INPUTS: vehicle states, position and steering targets.
-        OUTPUTS: steering angle.
-        '''
-        # define controller hyperparameters
-        l = 1
-        g = v
-        k = v
-        Lb = 1
-        b = 3*Lb/tan(1)
-    
-        # calculate sigma
-        s = (y - y_target)*cos(yaw_target) - (x - x_target)*sin(yaw_target) + \
-            b*wrap2pi(yaw-yaw_target)         
-    
-        # calculate the steering angle
-        yaw_dot = -(Lb/b)*sin(yaw-yaw_target) - ((k*Lb)/(b*v))*(s/(l + abs(s)))
-        delta = arctan(yaw_dot)
-    
-        return delta
 
     def _pid_control(self, waypoint,current_time=None):
         """

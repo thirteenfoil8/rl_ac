@@ -27,10 +27,14 @@ class ClipAction(gym.core.ActionWrapper):
 
     def action(self, action):
         
-        if action[1] > self.last_action+0.02: # 9° 
-            action[1] = self.last_action+0.02
-        if action[1] < self.last_action-0.02:
-            action[1] = self.last_action-0.02
+        if action[1] > self.last_steering+0.04: # 9° 
+            action[1] = self.last_steering+0.04
+        if action[1] < self.last_steering-0.04:
+            action[1] = self.last_steering-0.04
+        #if self.n_obj <3:
+        #    if np.random.random() > 0.5:
+        #        action[0] = max([action[0],0.5])
+
         
         
         return np.array([action[0],np.clip(action[1], self.low, self.high)])
@@ -52,6 +56,7 @@ class AC_Env(gym.Env):
     The methods are accessed publicly as "step", "reset", etc...
     """
     def __init__(self,env_config={}):
+        self.parse_env_config(env_config)
         self.initialise_data()
         self.done = False
         self.info = {}
@@ -59,13 +64,11 @@ class AC_Env(gym.Env):
         self.reward_step = 0
         self.n_obj=0
         self.out_of_road = 0
-        self.start_speed = 0
         self.time_check = 0
-        self.last_action = 0
+        self.last_steering = 0
+        self.last_input=0
         self.collision = 0
-        self.max_steps= 300
         self.spline_start= 0
-        self.offset_spline = 0
         self.wrong_action = 0
         self.count= 0
         self.eps=0
@@ -98,41 +101,80 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(84,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_action= 84 obs in float 32 --> 804 bytes per step
+                shape=(85,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_actions= 85 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
+    def parse_env_config(self,env_config):
+        keyword_dict = {
+            # these are all available keyboards and valid values respectively
+            # the first value in the list is the default value
+            'max_steps'             : [500, 'any', int],
+            'reward_speed_prop'     : [False,True],
+            'random_tp'             :[False,True],
+        }
+        
+        # ─── STEP 1 GET DEFAULT VALUE ────────────────────────────────────
+        assign_dict = {}
+        for keyword in keyword_dict:
+            # asign default value form keyword_dict
+            assign_dict[keyword] = keyword_dict[keyword][0]
+            
+        # ─── STEP 2 GET VALUE FROM env_config ─────────────────────────────
+        for keyword in env_config:
+            if keyword in keyword_dict:
+                # possible keyword proceed with assigning
+                if env_config[keyword] in keyword_dict[keyword]:
+                    # valid value passed, assign
+                    assign_dict[keyword] = env_config[keyword]
+                elif 'any' in keyword_dict[keyword]:
+                    # any value is allowed, assign if type matches
+                    if isinstance(env_config[keyword],keyword_dict[keyword][2]):
+                        print('type matches')
+                        assign_dict[keyword] = env_config[keyword]
+                    else:
+                        print('error: wrong type. type needs to be: ', keyword_dict[keyword][2])
+                else:
+                    print('given keyword exists, but given value is illegal')
+            else:
+                print('passed keyword does not exist: ',keyword)
+        # ─── ASSIGN DEFAULT VALUES ───────────────────────────────────────
+        self.max_steps = assign_dict['max_steps']
+        self.reward_speed_prop = assign_dict['reward_speed_prop']
+        self.random_tp=assign_dict['random_tp']
+
     def teleport_conversion(self):
 
         FloatArr = c_float * 3
         
-
-        random_splines = np.arange(0,1,0.05)
-        spline = random.choice(random_splines)
-        #spline= 0.0
-        idx=(np.abs(self.track_data[:,3]-spline)).argmin()
-        _waypoint = FloatArr()
-        _waypoint[0] = self.track_data[idx,0]
-        _waypoint[1] = self.track_data[idx,1]
-        _waypoint[2] =  self.track_data[idx,2]
-        _look = FloatArr()
-        _look[0] = -self.track_data[idx,16]
-        _look[1] = self.track_data[idx,17]
-        _look[2] = -self.track_data[idx,18]
-
-        #_waypoint = FloatArr()
-        #_waypoint[0] = 322.2773742675781
-        #_waypoint[1] = 192.01971435546875
-        #_waypoint[2] =  84.85726165771484
-        #_look = FloatArr()
-        #_look[0] =-0.9996861815452576
-        #_look[1] = 0.02443912997841835
-        #_look[2] = -0.005505245644599199
+        if self.random_tp :
+            random_splines = np.arange(0,1,0.05)
+            spline = random.choice(random_splines)
+            #spline= 0.0
+            idx=(np.abs(self.track_data[:,3]-spline)).argmin()
+            _waypoint = FloatArr()
+            _waypoint[0] = self.track_data[idx,0]
+            _waypoint[1] = self.track_data[idx,1]
+            _waypoint[2] =  self.track_data[idx,2]
+            _look = FloatArr()
+            _look[0] = -self.track_data[idx,16]
+            _look[1] = self.track_data[idx,17]
+            _look[2] = -self.track_data[idx,18]
+        else:
+            _waypoint = FloatArr()
+            _waypoint[0] = 322.2773742675781
+            _waypoint[1] = 192.01971435546875
+            _waypoint[2] =  84.85726165771484
+            _look = FloatArr()
+            _look[0] =-0.9996861815452576
+            _look[1] = 0.02443912997841835
+            _look[2] = -0.005505245644599199
 
 
         self.init_pos =  _waypoint
         self.init_dir =  _look
     def initialise_data(self):
+        """Initialise ram files in order to be able to use the Drive Master API"""
         sim_info.create_cars()
     def reset(self):
         """Resets the environment to an initial state and returns an initial
@@ -143,19 +185,20 @@ class AC_Env(gym.Env):
         be sampled independently between multiple calls to `reset()`. In other
         words, each call of `reset()` should yield an environment suitable for
         a new episode, independent of previous episodes.
-self._dict
         Returns:
             observation (object): the initial observation.
         """
+        # Reset car states and Teleport to initial position
         self.done = False
         self.teleport_conversion()
         self.controls.teleport(self.init_pos,self.init_dir)
         time.sleep(0.5)
         self.states,self._dict = self._vehicle.read_states()
-        
         self.controls.change_controls(self._dict,0,0)
         
         #self.sim.reset()
+
+        # Reset Agent States 
         self.update_observations()
         self.reward_total = 0
         self.count= 0
@@ -164,17 +207,17 @@ self._dict
         self.n_obj = 0
         self.out_of_road= 0
         self.reward_step= 0
-        self.start_speed=0
-        self.last_action=0
-        self.last_action_one=0
-        self.max_steps= 300
+        self.last_steering=0
+        self.last_input=0
         self.time_section = time.time()
         self.time_check=time.time()
         self.collision =self._dict['collision_counter']
         self.spline_start=self.truncate(self.states['spline_position'],2)
-        self.offset_spline = self.states['spline_position']
+
         return self.obs1d
     def move(self,action):
+        """ Run one timestep of the car dynamics. Write into RAM the next action 
+        """
         self.controls.change_controls(self.states,action[0],action[1])
 
     def step(self, action):
@@ -193,27 +236,23 @@ self._dict
             done (bool): whether the episode has ended, in which case further step() calls will return undefined results
             info (dict): contains auxiliary diagnostic information (helpful for debugging, and sometimes learning)
         """
-        # [-1:1]  18° 
+
+
+        # Uncomment this to store each states and actions inside a compressed json file
+
         #batch_builder = SampleBatchBuilder()  # or MultiAgentSampleBatchBuilder
         #writer = JsonWriter(
         #    os.path.join(ray._private.utils.get_user_temp_dir(), "demo-out"))
-        #prev_action = [self.last_action,self.last_action_one]
+        #prev_action = [self.last_steering,self.last_input]
         #prev_reward = self.reward_step
         #prev_obs = self.obs1d
         
         
-        
-        if self.wrong_action >20:
+        # If the car is out of the track too long, then the episode is early terminated
+        if self.wrong_action >50:
             self.done = True
-        #if not self.start_speed:
-        #    while self.states['speedKmh'] < 10:
-        #        self.states,self._dict = self._vehicle.read_states()
-        #        self.controls.change_controls(self._dict,1,0)
-        #    self.start_speed=1
 
-        #if time.time()-self.time_check >30 and self.states['speedKmh']<2:
-        #    self.done=True
-
+        # If the car is blocked in one segment, then the episode is early terminated
         if self.count > self.max_steps:
             self.done=True
         #Workflow:
@@ -226,13 +265,13 @@ self._dict
             self.update_observations()
             self.update_reward_naive()
             self.count+= 1
-            self.last_action = action[1]
+            self.last_steering = action[1]
 
         obs = self.obs1d
         reward = self.reward_step
         done = self.done
         info = {}
-        # ─── RESET ITERATION VARIABLES ───────────────────────────────────
+        # ─── Store values ───────────────────────────────────
         #batch_builder.add_values(
         #    t=self.count,
         #    eps_id=self.eps,
@@ -252,27 +291,45 @@ self._dict
         return [obs,reward ,done,info]
 
     def update_observations(self):
+        """Update all the obersvations: Car states, Distance and angle differences with the reference,
+        distance with the border of the track using the Lidar Sensors, 14 front points regarding the Curvature
+        and the last action.
 
+        
+
+        Returns:
+            observation (object): agent's observation of the current environment
+            reward (float) : amount of reward returned after previous action
+            done (bool): whether the episode has ended, in which case further step() calls will return undefined results
+            info (dict): contains auxiliary diagnostic information (helpful for debugging, and sometimes learning)
+        """
+        # If the car is out of the road, this flag is set to 1
         self.out_of_road=0
 
+        #Read states of the car
         self.states,self._dict = self._vehicle.read_states()
         dist,angle,_ = self.find_nearest()
        
+        # If the car collides with a wall, then the episode is early terminated
         if self._dict['collision_counter']> self.collision:
             self.out_of_road = 1
             self.done=True
+        #If the car wheels are dirty, this means that the car is out of the track
         for i in self._dict['dirty_level']:
-            if i != 0:
+            if i >0:
                 self.out_of_road = 1
                 self.wrong_action+=1
 
+        #Collect all the observations inside a 1d np array in float32 format
         self.obs1d = np.array([])
         self.obs ={k:self.states[k] for k in ('velocity','acceleration') if k in self.states}
         self.obs1d = sim_info.states_to_1d_vector(self.obs)
-        self.obs1d = self.obs1d =np.append(self.obs1d,np.array([self.last_action]).astype(np.float32))
+        self.obs1d = np.append(self.obs1d,np.array([self.last_steering]).astype(np.float32))
+        self.obs1d = np.append(self.obs1d,np.array([self.last_input]).astype(np.float32))
         
         #Compute the distance with the border of the track
         lidar,_,_= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
+        print(lidar)
         
         # if len(lidar)< 61, then the car is out of track --> add 0 to have data consistency
         if lidar.shape[0]< 61:
@@ -281,83 +338,105 @@ self._dict
             self.obs1d =np.append(self.obs1d,lidar)
             self.obs1d =np.append(self.obs1d,np.zeros(61-lidar.shape[0]).astype(np.float32))
             self.done=True
-        
         else:
             self.obs1d =np.append(self.obs1d,lidar)
         self.obs1d = np.append(self.obs1d,self.find_curvature().astype(np.float32))
         self.obs1d = np.append(self.obs1d,np.array([dist,angle]).astype(np.float32))
+
+        #Sometimes, some RAM data are nan (too fast data collecting) --> replace nan values by 0
         self.obs1d=np.nan_to_num(self.obs1d)
         
 
     def update_reward(self):
+        """First try of reward designing based on the car states only.
+            This was not the good way to proceed as the car doesn't learn how to progress on the track
+        """
         dist,angle,speed = self.find_nearest()
-        #reward_speed = np.abs(self.states['spline_position']-self.spline_before)
+
+        #Speed reward is computed as the faster, the bigger the reward is
         reward_speed = 1-(np.abs(self.states['speedKmh']-speed)/(speed+1))
         
-        # If distance with centerline > 10m --> negative reward
-
+        # Distance with the reference reward. The closer to 0, the biggest the reward
         if dist > 10:
             reward_ai_pos = 0
-        # Else, the closer to 0m , the higher the reward 
         else:
             dist_normed= dist/10
             reward_ai_pos = 1-dist_normed
-        #If the angle between the look angle of the car and the AI angle > np.pi/4 --> negative reward
-        #if angle > np.pi/9 or angle < -np.pi/9:
-        #    reward_ai_angle = 0
 
-        ##Add positiv reward for angle diff small
-        #if np.abs(angle)<np.pi/36:
-        #    reward_ai_angle =  (1-np.abs(angle/(np.pi/36))) 
+        # relative angle with the reference reward. The closer to 0, the biggest the reward
         reward_ai_angle = np.cos(angle) 
-        #Maybe Add Reward based on the angle of the steer related to the curvature of the track
        
             
-        # Reward step = distance achieved reward + distance to centerline reward + angle with centerline angle reward. If out of road, the reward becomes negativ
+        #The reward step is a weighted average of the three reward above
         self.reward_step= (2*reward_speed+ reward_ai_pos + 3*reward_ai_angle)/6
+
+        #The reward is not taken into account if the agent speed is smaller than 0
+        #This way, the agent understand quickly that it's better to accelerate when extreme low speed
         if self.states['speedKmh'] < 1:
             self.reward_step=0
         self.reward_total += self.reward_step
     def update_reward_naive(self):
-
+        """Second try of reward designing based on the car progression along the track.
+            This function first look how much the car has progressed along the track and then
+            gives a bigger reward if it did it fast. In addition, if the car is stucked inside a track segment,
+            The reward becomes smaller and smaller
+        """
         
-
+        #Find the progression along one segment and the time inside it
         dist_goal_before,dist_goal_after= self.find_progression()
         time_in_section= time.time()-self.time_section
         time_reward = time_in_section/10
+
+        #If the car stayed too long in one segment, then the reward is decreasing
         if time_in_section/10 >0.6:
             time_reward += self.n_obj
         
+        # The nearer to the segment end/goal, the biggest the reward
         self.reward_step= self.n_obj+ (1- (dist_goal_after/(dist_goal_after+dist_goal_before)))*(1- time_reward)
-        if self.states['speedKmh']>5:
 
+        #The reward_speed term has been added to accentuate the fact that it's better to drive as fast as possible
+        if self.reward_speed_prop:
             spline_kevin = (np.abs(self.df.NormalizedSplinePosition-self.states['spline_position'])).argmin()
 
             speed = self.df.Speed.iloc[[spline_kevin]].values[0]
-            x = 1-(np.abs(self.states['speedKmh']-speed)/(speed+1))
+            x = self.states['speedKmh']/speed
 
-            speed_reward = -0.1*np.exp(30*np.power((2*x-1),4)-32)+0.6*np.exp(np.power(x,8))-0.6
-            self.reward_step +=speed_reward*self.n_obj*10
+            speed_reward = -0.1*np.exp(30*np.power((2*x-1),4)-32)+0.6*np.exp(np.power(x,2))-0.5
+            self.reward_step +=(speed_reward*max(self.n_obj,1))
 
-        if self.states['speedKmh'] < 1:
-            self.reward_step=0
+        
 
+        #When out of the track, the reward becomes negative to indicate that it's not a good way to drive
         if self.out_of_road:
             self.reward_step-=20
 
         self.reward_total += self.reward_step
 
     def find_progression(self):
+        """This function is looking in depth where the car is in order to compute the past segment goal and
+        the new one in order to have an idea of the progression.
 
+        
+
+        Returns:
+            dist_goal_before (float): Agent's distance with the past goal
+            dist_goal_after (float): Agent's distance with the next goal
+        """
+        #Find agent past and next goal
         spline_goal_before =  self.truncate(self.states['spline_position'],2)
         spline_goal_after = spline_goal_before+0.01
         idx_goal_before = (np.abs(self.track_data[:,3]-spline_goal_before)).argmin()
         idx_goal_after = (np.abs(self.track_data[:,3]-spline_goal_after)).argmin()
         pos_goal_before = self.track_data[idx_goal_before,0:3]
         pos_goal_after = self.track_data[idx_goal_after,0:3]
-        self.line.conversion(pos_goal_before,pos_goal_after)
+
+        #self.line.conversion(pos_goal_before,pos_goal_after)
+
+        #Compute the distance betwen the car and the 2 goals
         dist_goal_before = np.linalg.norm(self.states['position']-pos_goal_before)
         dist_goal_after = np.linalg.norm(pos_goal_after-self.states['position'])
+
+        #Self.n_obj is incremented if the car has reached the new segment.
         if spline_goal_before != self.spline_start  :
             self.n_obj += 1
             self.spline_start=spline_goal_before
@@ -367,9 +446,20 @@ self._dict
         return dist_goal_before,dist_goal_after
 
     def find_curvature(self):
+        """This function is looking in depth where the car is in order to compute the past segment goal and
+        the new one in order to have an idea of the progression.
+
+        
+
+        Returns:
+            curvatures (np.array([14]), dtype:float): Track's next 14 radius of curvature in front of the car
+        """
+        # Find the position of the car
         idx=(np.abs(self.track_data[:,3]-self.states['spline_position'])).argmin()
-        #Return the curvature radius on the current location
+        
         curvatures = np.array([])
+        #Compute the next 14 radius of curvature based on the car's position along the track
+
         for i in range(14):
             if idx + i >= len(self.track_data[:,11]):
                 new_idx = (idx + i)-len(self.track_data[:,11])
@@ -379,6 +469,19 @@ self._dict
 
         return curvatures
     def find_nearest(self):
+        """This function is looking in depth where the car is in order to compute the difference between its 
+        position, its angle and its speed difference with the reference.
+
+        
+
+        Returns:
+            norm (float): Difference of position with respect to the reference
+            error (float): Difference of angle with respect to the reference
+            speed (float): Difference of speed with respect to the reference
+
+        """
+
+        #Find the reference data regarding the car's position
         x = self.centerline_xy[:,0]
         y = self.centerline_xy[:,1]
         pos = np.array([x,y])
@@ -420,21 +523,25 @@ self._dict
         return math.trunc(stepper * number) / stepper
 
     def controller_step(self):
+        """This function is only used in case of driving the car using the PID controller 
+        for a Imitation learning Algorithm.
+
+        Returns:
+            observation (object): agent's observation of the current environment
+            reward (float) : amount of reward returned after previous action
+            done (bool): whether the episode has ended, in which case further step() calls will return undefined results
+            info (dict): contains auxiliary diagnostic information (helpful for debugging, and sometimes learning)
+
+        """
 
         if self.wrong_action >1:
            self.done = True
-        #if not self.start_speed:
-        #    while self.states['speedKmh'] < 10:
-        #        self.states,self._dict = self._vehicle.read_states()
-        #        self.controls.change_controls(self._dict,1,0)
-        #    self.start_speed=1
 
-        #if time.time()-self.time_check >30 and self.states['speedKmh']<2:
-        #    self.done=True
 
         if self.count > self.max_steps:
             self.done=True
         #Workflow:
+        #   Compute action using the PID Controller
         #   send action to the car
         #   Update observations using RAM Data
         #   Update the reward
@@ -445,8 +552,8 @@ self._dict
         self.update_observations()
         self.update_reward_naive()
         self.count+= 1
-        self.last_action_one = action[0]
-        self.last_action = action[1]
+        self.last_input = action[0]
+        self.last_steering = action[1]
 
         obs = self.obs1d
         reward = self.reward_step
@@ -457,6 +564,11 @@ self._dict
         print(reward)
         return [obs,reward ,done,info,action]
     def store_expert_data(self):
+        """This function is only used in case of driving the car using the PID controller 
+        to store the data for a Imitation learning Algorithm.
+
+        """
+
         batch_builder = SampleBatchBuilder()  # or MultiAgentSampleBatchBuilder
         writer = JsonWriter(
             os.path.join(ray._private.utils.get_user_temp_dir(), "demo-out"))
@@ -464,9 +576,9 @@ self._dict
             self.reset()
             self.sim.reset()
             self.controller.data_flag=True
+            #While the lap is not finished, Store all states and actions inside a buffer
             while self.controller.data_flag:
-                
-                prev_action = [self.last_action,self.last_action_one]
+                prev_action = [self.last_steering,self.last_input]
                 prev_reward = self.reward_step
                 prev_obs = self.obs1d
                 obs,reward ,done,info,action = self.controller_step()
@@ -486,6 +598,8 @@ self._dict
                     dones=done,
                     infos=info,
                     new_obs=obs)
+            #Write the buffer inside a Json file
+
             writer.write(batch_builder.build_and_reset())
 
     
