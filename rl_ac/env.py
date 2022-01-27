@@ -101,7 +101,7 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(85,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_actions= 85 obs in float 32 --> 804 bytes per step
+                shape=(84,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_actions= 85 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
@@ -325,7 +325,7 @@ class AC_Env(gym.Env):
         self.obs ={k:self.states[k] for k in ('velocity','acceleration') if k in self.states}
         self.obs1d = sim_info.states_to_1d_vector(self.obs)
         self.obs1d = np.append(self.obs1d,np.array([self.last_steering]).astype(np.float32))
-        self.obs1d = np.append(self.obs1d,np.array([self.last_input]).astype(np.float32))
+        #self.obs1d = np.append(self.obs1d,np.array([self.last_input]).astype(np.float32))
         
         #Compute the distance with the border of the track
         lidar,_,_= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
@@ -407,7 +407,7 @@ class AC_Env(gym.Env):
 
         #When out of the track, the reward becomes negative to indicate that it's not a good way to drive
         if self.out_of_road:
-            self.reward_step-=50
+            self.reward_step-=20
 
         if self.states['speedKmh'] <1:
             self.reward_step = 0
