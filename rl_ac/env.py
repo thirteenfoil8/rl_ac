@@ -31,9 +31,7 @@ class ClipAction(gym.core.ActionWrapper):
             action[1] = self.last_steering+0.04
         if action[1] < self.last_steering-0.04:
             action[1] = self.last_steering-0.04
-        #if self.n_obj <3:
-        #    if np.random.random() > 0.5:
-        #        action[0] = max([action[0],0.5])
+        
 
         
         
@@ -71,14 +69,18 @@ class AC_Env(gym.Env):
         self.spline_start= 0
         self.wrong_action = 0
         self.count= 0
+        self.obj_to_lap = 0
         self.eps=0
         self.time_section = 0
+        self.errors = 50
         
         
         
         self._vehicle =  sim_info.SimInfo()
-        self.init_pos = c_float * 3
-        self.init_dir = c_float * 3
+        self.init_pos =  self._vehicle.init_pos
+        self.init_dir =  self._vehicle.init_dir
+        self.tp_pos= c_float *3
+        self.tp_dir= c_float *3
         
         self.controls = sim_info.SimControl()
         self.sim =sim_info.SimStates()
@@ -87,7 +89,7 @@ class AC_Env(gym.Env):
         
         
         self.obs1d = []
-        self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz,self.track_data = init_track_data()
+        self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz,self.track_data = init_track_data(track=self.track)
         self.df =  pd.read_csv("Data/Kevin/dynamic.csv",converters={'position': pd.eval})
         self.df['position'] =self.df[["WorldPosition_X","WorldPosition_Y","WorldPosition_Z"]].apply(lambda r: np.array(r), axis=1)
         self.controller = VehiclePIDController(self._vehicle,self.states,self.controls,self.df,self.sim)
@@ -112,6 +114,8 @@ class AC_Env(gym.Env):
             'max_steps'             : [500, 'any', int],
             'reward_speed_prop'     : [False,True],
             'random_tp'             :[False,True],
+            'errors'                : [50, 'any', int],
+            'track'                 :['vallelunga','any',str]
         }
         
         # ─── STEP 1 GET DEFAULT VALUE ────────────────────────────────────
@@ -142,7 +146,8 @@ class AC_Env(gym.Env):
         self.max_steps = assign_dict['max_steps']
         self.reward_speed_prop = assign_dict['reward_speed_prop']
         self.random_tp=assign_dict['random_tp']
-
+        self.errors = assign_dict['errors']
+        self.track = assign_dict['track']
     def teleport_conversion(self):
 
         FloatArr = c_float * 3
@@ -150,7 +155,6 @@ class AC_Env(gym.Env):
         if self.random_tp :
             random_splines = np.arange(0,1,0.05)
             spline = random.choice(random_splines)
-            #spline= 0.0
             idx=(np.abs(self.track_data[:,3]-spline)).argmin()
             _waypoint = FloatArr()
             _waypoint[0] = self.track_data[idx,0]
@@ -162,17 +166,17 @@ class AC_Env(gym.Env):
             _look[2] = -self.track_data[idx,18]
         else:
             _waypoint = FloatArr()
-            _waypoint[0] = 322.2773742675781
-            _waypoint[1] = 192.01971435546875
-            _waypoint[2] =  84.85726165771484
+            _waypoint[0] = self.init_pos[0]
+            _waypoint[1] = self.init_pos[1]
+            _waypoint[2] =  self.init_pos[2]
             _look = FloatArr()
-            _look[0] =-0.9996861815452576
-            _look[1] = 0.02443912997841835
-            _look[2] = -0.005505245644599199
+            _look[0] = -self.init_dir[0]
+            _look[1] = self.init_dir[1]
+            _look[2] = -self.init_dir[2]
 
 
-        self.init_pos =  _waypoint
-        self.init_dir =  _look
+        self.tp_pos =  _waypoint
+        self.tp_dir =  _look
     def initialise_data(self):
         """Initialise ram files in order to be able to use the Drive Master API"""
         sim_info.create_cars()
@@ -191,7 +195,7 @@ class AC_Env(gym.Env):
         # Reset car states and Teleport to initial position
         self.done = False
         self.teleport_conversion()
-        self.controls.teleport(self.init_pos,self.init_dir)
+        self.controls.teleport(self.tp_pos,self.tp_dir)
         time.sleep(0.5)
         self.states,self._dict = self._vehicle.read_states()
         self.controls.change_controls(self._dict,0,0)
@@ -213,6 +217,7 @@ class AC_Env(gym.Env):
         self.time_check=time.time()
         self.collision =self._dict['collision_counter']
         self.spline_start=self.truncate(self.states['spline_position'],2)
+        self.obj_to_lap=100+ (100-self.truncate(self.spline_start*100,0)+1) 
 
         return self.obs1d
     def move(self,action):
@@ -237,23 +242,19 @@ class AC_Env(gym.Env):
             info (dict): contains auxiliary diagnostic information (helpful for debugging, and sometimes learning)
         """
 
-
-        # Uncomment this to store each states and actions inside a compressed json file
-
-        #batch_builder = SampleBatchBuilder()  # or MultiAgentSampleBatchBuilder
-        #writer = JsonWriter(
-        #    os.path.join(ray._private.utils.get_user_temp_dir(), "demo-out"))
-        #prev_action = [self.last_steering,self.last_input]
-        #prev_reward = self.reward_step
-        #prev_obs = self.obs1d
         
         
         # If the car is out of the track too long, then the episode is early terminated
-        if self.wrong_action >50:
+        if self.wrong_action >self.errors:
+            print('too many wrong action')
+            
             self.done = True
+        if self.n_obj > self.obj_to_lap:
+            self.done=True
 
         # If the car is blocked in one segment, then the episode is early terminated
         if self.count > self.max_steps:
+            print('too slow in segment ' + str(self.n_obj))
             self.done=True
         #Workflow:
         #   send action to the car
@@ -271,23 +272,6 @@ class AC_Env(gym.Env):
         reward = self.reward_step
         done = self.done
         info = {}
-        # ─── Store values ───────────────────────────────────
-        #batch_builder.add_values(
-        #    t=self.count,
-        #    eps_id=self.eps,
-        #    agent_index=0,
-        #    obs=prev_obs,
-        #    actions=action,
-        #    action_prob=1.0,  
-        #    action_logp=0.0,
-        #    rewards=reward,
-        #    prev_actions=prev_action,
-        #    prev_rewards=prev_reward,
-        #    dones=done,
-        #    infos=info,
-        #    new_obs=obs)
-        #if self.done:
-        #    writer.write(batch_builder.build_and_reset())
         return [obs,reward ,done,info]
 
     def update_observations(self):
@@ -312,6 +296,7 @@ class AC_Env(gym.Env):
        
         # If the car collides with a wall, then the episode is early terminated
         if self._dict['collision_counter']> self.collision:
+            self.collision = self._dict['collision_counter']
             self.out_of_road = 1
             self.done=True
         #If the car wheels are dirty, this means that the car is out of the track
@@ -329,7 +314,6 @@ class AC_Env(gym.Env):
         
         #Compute the distance with the border of the track
         lidar,_,_= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
-        print(lidar)
         
         # if len(lidar)< 61, then the car is out of track --> add 0 to have data consistency
         if lidar.shape[0]< 61:
@@ -407,7 +391,7 @@ class AC_Env(gym.Env):
 
         #When out of the track, the reward becomes negative to indicate that it's not a good way to drive
         if self.out_of_road:
-            self.reward_step-=20
+            self.reward_step = -50
 
         if self.states['speedKmh'] <1:
             self.reward_step = 0

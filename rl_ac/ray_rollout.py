@@ -13,8 +13,7 @@ register_env('Model',  env_creator)
 
 
 # path to checkpoint
-checkpoint_path = r'ray_results\SAC\SAC_prog_speed\checkpoint_013440\checkpoint-13440'
-#ppo   r'.\ray_results\PPO_Vehicule\PPO_RocketMeister10_15db7_00000_0_2021-11-01_08-05-25\checkpoint_000440\checkpoint-440'
+checkpoint_path = r'.\ray_results\SAC\SAC_Model_66510_00000_0_2022-01-31_12-10-29\checkpoint_031420\checkpoint-31420'
 
 string = ' '.join([
     checkpoint_path,
@@ -23,7 +22,7 @@ string = ' '.join([
     '--env',
     'Model',
     '--episodes',
-    '5',
+    '10',
     '--steps', 
     '1000000'
 ])
@@ -31,7 +30,9 @@ config = {
     "env_config":{
             "max_steps": 500,
             "reward_speed_prop":False,
-            "random_tp":True,
+            "random_tp":False,
+            "errors":200,
+            "track":"vallelunga",
             },
 }
 config_json = json.dumps(config)

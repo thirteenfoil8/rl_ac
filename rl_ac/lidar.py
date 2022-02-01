@@ -14,10 +14,10 @@ import time
 # lidar 2D
 # interesctions based on https://www.geeksforgeeks.org/check-if-two-given-line-segments-intersect/
 global laplines, checkbtn, plotter, LINE_WIDTH, LINE_ALPHA, LINE_COLOR
-def init_track_data():
-    TRACK = "vallelunga"
+def init_track_data(track = 'vallelunga',folder="Data"):
+    TRACK = track
 
-    FOLDER = "Data"
+    FOLDER = folder
 
 
     FOLDER = FOLDER + "/" + TRACK
@@ -412,13 +412,16 @@ def compute_distances(position,lidar_points):
     lidar_distances = []
     for i in lidar_points:
         i[1] *= -1
-        lidar_distances.append(np.linalg.norm(i-[position[0],position[2]]))
+        distance=np.linalg.norm(i-[position[0],position[2]])
+        #if distance > 300:
+        #    distance = 300
+        lidar_distances.append(distance)
     arr = np.array(lidar_distances)
     arr = arr.astype(np.float32)
     return arr
 
 def compute_lidar_distances(look,position,sideleft_xy,sideright_xy):
-    max_dist = 1000  # 1km forward looking
+    max_dist = 3000  # 1km forward looking
     half_angle = 60
     angle_inc = 2
 

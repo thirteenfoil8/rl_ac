@@ -7,6 +7,7 @@ import numpy as np
 import struct
 import pandas as pd
 import ray
+import pickle
 import os
 from controller import VehiclePIDController
 import multiprocessing
@@ -145,11 +146,17 @@ class SPageSimControls(ctypes.Structure):
     ]
 
 #Structure of the line drawing control
-class SPageLineControls(ctypes.Structure):
+nb_line = 1
+class SPageLinestates(ctypes.Structure):
     _fields_ = [
         ('From', c_float * 3),  
         ('To', c_float * 3), 
         ('color', c_uint32), 
+    ]
+class SPageLineControls(ctypes.Structure):
+    _fields_ = [
+        ('nb_line', c_uint32),  
+        ('lines', SPageLinestates),
     ]
 
 
@@ -165,10 +172,14 @@ class SimInfo:
     def __init__(self,file ="AcTools.CSP.ModuleLDM.AIProject.Car0.v0" ):
 
         self._acpmf_physics = mmap.mmap(0, ctypes.sizeof(SPageFilePhysics), file)
-        self.physics = SPageFilePhysics.from_buffer(self._acpmf_physics)
-        self.init_pos = self.physics.position
-        self.init_dir = self.physics.look
+        self.physics = SPageFilePhysics.from_buffer(self._acpmf_physics) 
+        open_file = open("init.pkl", "wb")
+        
+
         #Get the reference data (track border, ...)
+        self.init_states,_ = self.read_states()
+        self.init_pos = self.init_states['position']
+        self.init_dir = self.init_states['look']
         self.sideleft_xy,self.sideright_xy,self.centerline_xy,self.normal_xyz,self.track_data = init_track_data()
 
     def read_states(self):
@@ -289,22 +300,22 @@ class SimControl:
         self.controls.gear_up = 0
         self.controls.teleport_to = 0
         self.controls.gear_dn = 0
-        if time.time() -self.time_check>0.5:
-            if gas > 0:
-                #If the agent applies throttle, then checked if gear up is needed
-                if states['gear'] == 1  and states['rpm']> 1500:
-                    self.time_check = time.time()
-                    self.change_gear(0)
+        #if time.time() -self.time_check>0.5:
+        if gas > 0:
+            #If the agent applies throttle, then checked if gear up is needed
+            if states['gear'] == 1  and states['rpm']> 1500:
+                self.time_check = time.time()
+                self.change_gear(0)
                 
-                if states['rpm'] > self.treshold_up and states['gear'] != 1 :
-                    self.time_check = time.time()
-                    self.change_gear(0) #increase
+            if states['rpm'] > self.treshold_up and states['gear'] != 1 :
+                self.time_check = time.time()
+                self.change_gear(0) #increase
 
-            if brake > 0:
-                #If the agent applies braking, then checked if gear down is needed
-                if states['rpm'] < self.treshold_dn and (states['gear'] not in [1,2]) :
-                    self.time_check = time.time()
-                    self.change_gear(1) #decrease
+        if brake > 0:
+            #If the agent applies braking, then checked if gear down is needed
+            if states['rpm'] < self.treshold_dn and (states['gear'] not in [1,2]) :
+                self.time_check = time.time()
+                self.change_gear(1) #decrease
                 
 
         self.update_control()
@@ -320,7 +331,6 @@ class SimControl:
         self.controls.teleport_pos = position
         self.controls.teleport_dir = dir
         self.update_control()
-        print('Teleportation')
 
     def change_gear(self,state):
         if state == 0:
@@ -375,8 +385,10 @@ class LineControl:
     def __init__(self,file = "AcTools.CSP.ModuleLDM.AIProject.Lines.v0"):
         self.file = file
         self.init_file()
-        self._line = mmap.mmap(0, ctypes.sizeof(SPageLineControls), self.file)
-        self.line =SPageLineControls.from_buffer(self._line)
+        self._lines = mmap.mmap(0, ctypes.sizeof(SPageLineControls), self.file)
+        self.lines =SPageLineControls.from_buffer(self._lines)
+        #self._line = mmap.mmap(0, ctypes.sizeof(SPageLinestates), "AcTools.CSP.ModuleLDM.AIProject.Line.v0")
+        #self.line =SPageLinestates.from_buffer(self._line)
 
     def init_file(self):
         p =subprocess.Popen('Drivemaster.AiProjectWriter.exe {}'.format(self.file))
@@ -384,18 +396,20 @@ class LineControl:
         p.terminate()
         p.kill()
     def update_line(self):
-        new_line =bytearray(self.line)
-        self._line.seek(0)
-        self._line.write(new_line)
+        new_line =bytearray(self.lines)
+        self._lines.seek(0)
+        self._lines.write(new_line)
     def draw(self,From= c_float * 3,To=c_float * 3):
         """ Draw the line From  ---------->   To
         """
-        self.line.From = From
-        self.line.To = To
-        self.line.color = 1000
+        line=SPageLinestates()
+        self.lines.nb_line=1
+        line.From = From
+        line.To = To
+        line.color = 10
+        self.lines.lines = line
         self.update_line()
     def conversion(self,From,To):
-        print(From,To)
         FloatArr = c_float * 3
         _from = FloatArr()
         _To = FloatArr()
@@ -454,10 +468,9 @@ def run_pid(controller,info):
     while controller._vehicle['best_lap_time_ms'] > 59400 or controller._vehicle['best_lap_time_ms'] == 0:
         input,steering =controller.run_step()
         distances,_,_ = compute_lidar_distances(controller._vehicle["look"],controller._vehicle["position"],info.sideleft_xy,info.sideright_xy)
-        print(distances)
-        #pos = controller._vehicle['position']
-        #pos2 = pos[0],pos[1]+10,pos[2]
-        #Line.conversion(pos,pos2)
+        pos = controller._vehicle['position']
+        pos2 = [pos[0]+30,pos[1]+10,pos[2]+10]
+        Line.conversion(pos,pos2)
 
 
 
