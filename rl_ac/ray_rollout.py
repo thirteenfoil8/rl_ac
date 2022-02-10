@@ -13,7 +13,7 @@ register_env('Model',  env_creator)
 
 
 # path to checkpoint
-checkpoint_path = r'.\ray_results\SAC\SAC_Model_66510_00000_0_2022-01-31_12-10-29\checkpoint_031420\checkpoint-31420'
+checkpoint_path = r'.\ray_results\SAC\SAC_evaluate_new_lidar\checkpoint_031420\checkpoint-31420'
 
 string = ' '.join([
     checkpoint_path,
@@ -30,7 +30,7 @@ config = {
     "env_config":{
             "max_steps": 500,
             "reward_speed_prop":False,
-            "random_tp":False,
+            "random_tp":True,
             "errors":200,
             "track":"vallelunga",
             },

@@ -31,11 +31,16 @@ class ClipAction(gym.core.ActionWrapper):
             action[1] = self.last_steering+0.04
         if action[1] < self.last_steering-0.04:
             action[1] = self.last_steering-0.04
+
+        #if action[0] > self.last_input+0.2: # 0.2 input difference° 
+        #    action[0] = self.last_input+0.2
+        #if action[0] < self.last_input-0.2:
+        #    action[0] = self.last_input-0.2
         
 
         
         
-        return np.array([action[0],np.clip(action[1], self.low, self.high)])
+        return np.array([np.clip(action[0], self.low, self.high),np.clip(action[1], self.low, self.high)])
 
 class AC_Env(gym.Env):
     """
@@ -72,7 +77,6 @@ class AC_Env(gym.Env):
         self.obj_to_lap = 0
         self.eps=0
         self.time_section = 0
-        self.errors = 50
         
         
         
@@ -86,6 +90,7 @@ class AC_Env(gym.Env):
         self.sim =sim_info.SimStates()
         self.line=sim_info.LineControl()
         self.states,self._dict = self._vehicle.read_states() 
+        #self.sim.speed()
         
         
         self.obs1d = []
@@ -103,7 +108,7 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(84,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_actions= 85 obs in float 32 --> 804 bytes per step
+                shape=(85,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_actions= 85 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
@@ -149,7 +154,7 @@ class AC_Env(gym.Env):
         self.errors = assign_dict['errors']
         self.track = assign_dict['track']
     def teleport_conversion(self):
-
+        # add offset for generalization
         FloatArr = c_float * 3
         
         if self.random_tp :
@@ -198,7 +203,7 @@ class AC_Env(gym.Env):
         self.controls.teleport(self.tp_pos,self.tp_dir)
         time.sleep(0.5)
         self.states,self._dict = self._vehicle.read_states()
-        self.controls.change_controls(self._dict,0,0)
+        #self.controls.change_controls(self._dict,0,0)
         
         #self.sim.reset()
 
@@ -246,9 +251,9 @@ class AC_Env(gym.Env):
         
         # If the car is out of the track too long, then the episode is early terminated
         if self.wrong_action >self.errors:
-            print('too many wrong action')
-            
+            print('too many wrong actions')
             self.done = True
+
         if self.n_obj > self.obj_to_lap:
             self.done=True
 
@@ -267,12 +272,16 @@ class AC_Env(gym.Env):
             self.update_reward_naive()
             self.count+= 1
             self.last_steering = action[1]
+            self.last_input = action[0]
 
         obs = self.obs1d
         reward = self.reward_step
         done = self.done
         info = {}
         return [obs,reward ,done,info]
+
+    def normalizeData(data,min,max):
+        return (data - min) / (max - min)
 
     def update_observations(self):
         """Update all the obersvations: Car states, Distance and angle differences with the reference,
@@ -296,9 +305,8 @@ class AC_Env(gym.Env):
        
         # If the car collides with a wall, then the episode is early terminated
         if self._dict['collision_counter']> self.collision:
-            self.collision = self._dict['collision_counter']
             self.out_of_road = 1
-            self.done=True
+            self.wrong_action+=1
         #If the car wheels are dirty, this means that the car is out of the track
         for i in self._dict['dirty_level']:
             if i >0:
@@ -310,7 +318,7 @@ class AC_Env(gym.Env):
         self.obs ={k:self.states[k] for k in ('velocity','acceleration') if k in self.states}
         self.obs1d = sim_info.states_to_1d_vector(self.obs)
         self.obs1d = np.append(self.obs1d,np.array([self.last_steering]).astype(np.float32))
-        #self.obs1d = np.append(self.obs1d,np.array([self.last_input]).astype(np.float32))
+        self.obs1d = np.append(self.obs1d,np.array([self.last_input]).astype(np.float32))
         
         #Compute the distance with the border of the track
         lidar,_,_= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
@@ -351,12 +359,15 @@ class AC_Env(gym.Env):
        
             
         #The reward step is a weighted average of the three reward above
-        self.reward_step= (2*reward_speed+ reward_ai_pos + 3*reward_ai_angle)/6
+        self.reward_step= self.states['speedKmh']*(reward_ai_pos + reward_ai_angle)
+
+        if self.out_of_road:
+            self.reward_step = -10
 
         #The reward is not taken into account if the agent speed is smaller than 0
         #This way, the agent understand quickly that it's better to accelerate when extreme low speed
         if self.states['speedKmh'] < 1:
-            self.reward_step=0
+            self.reward_step = -0.1
         self.reward_total += self.reward_step
     def update_reward_naive(self):
         """Second try of reward designing based on the car progression along the track.
@@ -371,7 +382,7 @@ class AC_Env(gym.Env):
         time_reward = time_in_section/10
 
         #If the car stayed too long in one segment, then the reward is decreasing
-        if time_in_section/10 >0.3:
+        if time_reward >0.3:
             time_reward += self.n_obj
         
         # The nearer to the segment end/goal, the biggest the reward 
@@ -385,16 +396,16 @@ class AC_Env(gym.Env):
             x = self.states['speedKmh']/speed
 
             speed_reward = -0.1*np.exp(30*np.power((2*x-1),4)-32)+0.6*np.exp(np.power(x,2))-0.5
-            self.reward_step +=(speed_reward*max([self.n_obj,1]))
+            self.reward_step +=speed_reward
 
         
 
         #When out of the track, the reward becomes negative to indicate that it's not a good way to drive
         if self.out_of_road:
-            self.reward_step = -50
+            self.reward_step = -10
 
-        if self.states['speedKmh'] <1:
-            self.reward_step = 0
+        if self.states['speedKmh'] <1 and time_reward > 0.2:
+            self.reward_step = min([-0.1,self.reward_step])
         self.reward_total += self.reward_step
 
     def find_progression(self):
@@ -475,7 +486,7 @@ class AC_Env(gym.Env):
         norms =np.sqrt(inner1d(np.stack(deltas,axis = 1),np.stack(deltas,axis = 1)))
         minimum_norm = norms.argmin()
         norm = norms.min()
-        minimum_norm += 6
+        minimum_norm += 48
         if minimum_norm >= norms.shape[0]: 
             minimum_norm = minimum_norm - norms.shape[0]
         
@@ -487,8 +498,6 @@ class AC_Env(gym.Env):
         spline_kevin = (np.abs(self.df.NormalizedSplinePosition-self.states['spline_position'])).argmin()
         speed = self.df.Speed.iloc[[spline_kevin]]
 
-        #goal_spline =  self.truncate(self.states['spline_position'],1)
-        #goal_position = 
 
 
         return norm,error,speed.values[0]

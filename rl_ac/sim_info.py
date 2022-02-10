@@ -97,7 +97,8 @@ class SPageFilePhysics(ctypes.Structure):
 controls_needed = ['gas',
                    'break',
                    'steer',
-                   'gear_up']
+                   'gear_up',
+                   'gear_down']
 
 #Structure of the car controls
 class SPageFileControls(ctypes.Structure):
@@ -259,6 +260,7 @@ class SimControl:
         self.controls.clutch=1
         self.time_check = time.time()
         self.last_gear = 1
+        self.tp=False
 
         #RPM threshold to gear up
         self.treshold_up = 7500 
@@ -300,24 +302,24 @@ class SimControl:
         self.controls.gear_up = 0
         self.controls.teleport_to = 0
         self.controls.gear_dn = 0
-        #if time.time() -self.time_check>0.5:
-        if gas > 0:
-            #If the agent applies throttle, then checked if gear up is needed
-            if states['gear'] == 1  and states['rpm']> 1500:
-                self.time_check = time.time()
-                self.change_gear(0)
+        if time.time() -self.time_check>0.5:
+            if gas > 0 or self.tp:
+                #If the agent applies throttle, then checked if gear up is needed
+                if (states['gear'] == 1  and states['rpm']> 1500) or (self.tp):
+                    self.time_check = time.time()
+                    self.change_gear(0)
                 
-            if states['rpm'] > self.treshold_up and states['gear'] != 1 :
-                self.time_check = time.time()
-                self.change_gear(0) #increase
+                if states['rpm'] > self.treshold_up and states['gear'] != 1 :
+                    self.time_check = time.time()
+                    self.change_gear(0) #increase
 
-        if brake > 0:
-            #If the agent applies braking, then checked if gear down is needed
-            if states['rpm'] < self.treshold_dn and (states['gear'] not in [1,2]) :
-                self.time_check = time.time()
-                self.change_gear(1) #decrease
+            if brake > 0 and not self.tp:
+                #If the agent applies braking, then checked if gear down is needed
+                if states['rpm'] < self.treshold_dn and (states['gear'] not in [0,1,2]) :
+                    self.time_check = time.time()
+                    self.change_gear(1) #decrease
                 
-
+        self.tp=False
         self.update_control()
 
     def teleport(self,position= c_float * 3,dir=c_float * 3):
@@ -330,7 +332,21 @@ class SimControl:
         self.controls.teleport_to = 2
         self.controls.teleport_pos = position
         self.controls.teleport_dir = dir
+        self.tp=True
         self.update_control()
+        #time.sleep(0.5)
+
+        #self.controls.clutch=1
+        #gas = 0
+        #brake = 0 
+        #steer = 0
+        #self.controls.gas = gas
+        #self.controls.brake = brake
+        #self.controls.steer = steer
+        #self.controls.gear_dn = 0
+        #self.change_gear(0)
+        #self.time_check = time.time()
+        #self.update_control()
 
     def change_gear(self,state):
         if state == 0:

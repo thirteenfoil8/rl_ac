@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>95f93644-d78e-4599-8768-2f67cc3fed1f</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>ray_rollout.py</StartupFile>
+    <StartupFile>ray_train.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>

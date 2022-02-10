@@ -19,7 +19,7 @@ tune.run(
     name = "SAC",
     # to resume training from a checkpoint, set the path accordingly:
     #resume = True, # you can resume from checkpoint
-    #restore =r'.\ray_results\SAC\SAC_evaluate_new_lidar\checkpoint_031400\checkpoint-31400',
+    #restore =r'.\ray_results\SAC\SAC_prog_new_lidar\checkpoint_031420\checkpoint-31420',
     checkpoint_freq = 200,
     checkpoint_at_end = True,
     local_dir = r'./ray_results/',
@@ -28,14 +28,13 @@ tune.run(
         
         "num_gpus": 1,
         "num_workers": 1,
-        "num_cpus_per_worker": 1,
         "framework": "tf",
         #"framework": "tf2",
         #"eager_tracing": True,
         #"train_batch_size": 128,
         #"timesteps_per_iteration": 256,
         
-        "lr": 0.001,
+        "lr": 0.0001,
         "env_config":{
             "max_steps": 300,
             "reward_speed_prop":False,
@@ -49,13 +48,15 @@ tune.run(
         "_deterministic_loss":True,
         "policy_model": {
             "fcnet_hiddens": [256, 256],
-            "fcnet_activation": "tanh",
+            "fcnet_activation": "relu",
         },
 
         "Q_model": {
         "fcnet_hiddens": [256, 256],
-        "fcnet_activation": "tanh",
+        "fcnet_activation": "relu",
         },
+        "train_batch_size": 128,
+        "timesteps_per_iteration": 256,
 
         
         },
