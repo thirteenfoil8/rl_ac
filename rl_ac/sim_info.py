@@ -303,9 +303,9 @@ class SimControl:
         self.controls.teleport_to = 0
         self.controls.gear_dn = 0
         if time.time() -self.time_check>0.5:
-            if gas > 0 or self.tp:
+            if gas > 0:
                 #If the agent applies throttle, then checked if gear up is needed
-                if (states['gear'] == 1  and states['rpm']> 1500) or (self.tp):
+                if (states['gear'] == 1  and states['rpm']> 1500):
                     self.time_check = time.time()
                     self.change_gear(0)
                 
@@ -313,7 +313,7 @@ class SimControl:
                     self.time_check = time.time()
                     self.change_gear(0) #increase
 
-            if brake > 0 and not self.tp:
+            if brake > 0:
                 #If the agent applies braking, then checked if gear down is needed
                 if states['rpm'] < self.treshold_dn and (states['gear'] not in [0,1,2]) :
                     self.time_check = time.time()

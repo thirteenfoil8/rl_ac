@@ -34,7 +34,7 @@ tune.run(
         #"train_batch_size": 128,
         #"timesteps_per_iteration": 256,
         
-        "lr": 0.0001,
+        "lr": 0.001,
         "env_config":{
             "max_steps": 300,
             "reward_speed_prop":False,
@@ -44,8 +44,8 @@ tune.run(
             },
         ### Uncomment this if you use SAC
         "store_buffer_in_checkpoints": True,
-        "prioritized_replay": True,
-        "_deterministic_loss":True,
+        #"prioritized_replay": True,
+        #"_deterministic_loss":True,
         "policy_model": {
             "fcnet_hiddens": [256, 256],
             "fcnet_activation": "relu",
@@ -55,7 +55,7 @@ tune.run(
         "fcnet_hiddens": [256, 256],
         "fcnet_activation": "relu",
         },
-        "train_batch_size": 128,
+        #"train_batch_size": 128,
         "timesteps_per_iteration": 256,
 
         

@@ -280,8 +280,8 @@ class AC_Env(gym.Env):
         info = {}
         return [obs,reward ,done,info]
 
-    def normalizeData(data,min,max):
-        return (data - min) / (max - min)
+    def normalizeData(self,data,min,max):
+        return (data - np.min(data)) / (np.max(data) - np.min(data))
 
     def update_observations(self):
         """Update all the obersvations: Car states, Distance and angle differences with the reference,
@@ -322,7 +322,7 @@ class AC_Env(gym.Env):
         
         #Compute the distance with the border of the track
         lidar,_,_= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
-        
+        lidar= self.normalizeData(lidar,0,max(lidar))
         # if len(lidar)< 61, then the car is out of track --> add 0 to have data consistency
         if lidar.shape[0]< 61:
             self.out_of_road= 1
@@ -459,11 +459,11 @@ class AC_Env(gym.Env):
         for i in range(14):
             if idx + i >= len(self.track_data[:,11]):
                 new_idx = (idx + i)-len(self.track_data[:,11])
-                curvatures = np.append(curvatures,1/(self.track_data[new_idx,11]*self.track_data[new_idx,7]))
+                curvatures = np.append(curvatures,self.track_data[new_idx,11]*self.track_data[new_idx,7])
             else:
-                curvatures = np.append(curvatures,1/(self.track_data[idx + i,11]*self.track_data[idx + i,7]))
+                curvatures = np.append(curvatures,self.track_data[idx + i,11]*self.track_data[idx + i,7])
 
-        return curvatures
+        return self.normalizeData(curvatures)
     def find_nearest(self):
         """This function is looking in depth where the car is in order to compute the difference between its 
         position, its angle and its speed difference with the reference.
