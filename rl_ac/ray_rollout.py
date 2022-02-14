@@ -33,6 +33,8 @@ config = {
             "random_tp":True,
             "errors":200,
             "track":"vallelunga",
+            "store_data":True,
+            "normalize_obs":False,
             },
 }
 config_json = json.dumps(config)

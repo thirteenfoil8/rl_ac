@@ -19,7 +19,7 @@ tune.run(
     name = "SAC",
     # to resume training from a checkpoint, set the path accordingly:
     #resume = True, # you can resume from checkpoint
-    #restore =r'.\ray_results\SAC\SAC_prog_new_lidar\checkpoint_031420\checkpoint-31420',
+    #restore =r'.\ray_results\SAC\SAC_normalized\checkpoint_000200\checkpoint-200',
     checkpoint_freq = 200,
     checkpoint_at_end = True,
     local_dir = r'./ray_results/',
@@ -38,9 +38,11 @@ tune.run(
         "env_config":{
             "max_steps": 300,
             "reward_speed_prop":False,
-            "random_tp":False,
+            "random_tp":True,
             "errors":50,
             "track":"vallelunga",
+            "store_data":True,
+            "normalize_obs":False,
             },
         ### Uncomment this if you use SAC
         "store_buffer_in_checkpoints": True,

@@ -151,23 +151,21 @@ def init_track_data(track = 'vallelunga',folder="Data"):
         sideright_xy = np.delete(sideright_xyz, obj=1, axis=1)
         sideright_xy[:,1] *= -1
 
+
+    #fig = plt.figure(figsize=(16,8))
+    #ax = fig.add_subplot()
+
+    #tr = mtransforms.Affine2D().rotate_deg(CIRCUIT_ROTATION).translate(CIRCUIT_TRANSLATE_X, CIRCUIT_TRANSLATE_Y) + ax.transData
+
+    #ax.scatter(centerline_xy[:,0], centerline_xy[:,1], c="g", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
+    #ax.scatter(sideleft_xy[:,0], sideleft_xy[:,1], c="r", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
+    #ax.scatter(sideright_xy[:,0], sideright_xy[:,1], c="b", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
+    #plt.show()
+
     return sideleft_xy,sideright_xy,centerline_xy,forward_xyz,track_data
     
-    
-# DEBUG !!!!!!!!!!!!!!!!
+#init_track_data()    
 
-#fig = plt.figure(figsize=(16,8))
-#ax = fig.add_subplot()
-
-#tr = mtransforms.Affine2D().rotate_deg(CIRCUIT_ROTATION).translate(CIRCUIT_TRANSLATE_X, CIRCUIT_TRANSLATE_Y) + ax.transData
-
-#ax.scatter(centerline_xy[:,0], centerline_xy[:,1], c="g", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
-#ax.scatter(sideleft_xy[:,0], sideleft_xy[:,1], c="r", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
-#ax.scatter(sideright_xy[:,0], sideright_xy[:,1], c="b", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
-
-
-
-# END DEBUG !!!!!!!!!!!!!!!!
 
 def segment_length(px, py, qx, qy):
     sqlen = (px - qx)*(px - qx) + (py - qy)*(py - qy)

@@ -40,7 +40,7 @@ class ClipAction(gym.core.ActionWrapper):
 
         
         
-        return np.array([np.clip(action[0], self.low, self.high),np.clip(action[1], self.low, self.high)])
+        return np.array([action[0],np.clip(action[1], self.low, self.high)])
 
 class AC_Env(gym.Env):
     """
@@ -76,7 +76,9 @@ class AC_Env(gym.Env):
         self.count= 0
         self.obj_to_lap = 0
         self.eps=0
+        self.data = []
         self.time_section = 0
+        self.store_data=True
         
         
         
@@ -90,7 +92,7 @@ class AC_Env(gym.Env):
         self.sim =sim_info.SimStates()
         self.line=sim_info.LineControl()
         self.states,self._dict = self._vehicle.read_states() 
-        #self.sim.speed()
+        #self.sim.speed(4)
         
         
         self.obs1d = []
@@ -108,7 +110,7 @@ class AC_Env(gym.Env):
         self.observation_space = gym.spaces.Box(
                 low=np.finfo(np.float32).min,
                 high=np.finfo(np.float32).max,
-                shape=(85,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_actions= 85 obs in float 32 --> 804 bytes per step
+                shape=(84,), #6 car states + 61 lidar + 14curvatures + angle+dist+ self.last_actions= 85 obs in float 32 --> 804 bytes per step
                 dtype=np.float32)
         self.seed()
         self.reset()
@@ -120,7 +122,9 @@ class AC_Env(gym.Env):
             'reward_speed_prop'     : [False,True],
             'random_tp'             :[False,True],
             'errors'                : [50, 'any', int],
-            'track'                 :['vallelunga','any',str]
+            'track'                 :['vallelunga','any',str],
+            'store_data'            :[True,False],  
+            'normalize_obs'         :[False,True]
         }
         
         # ─── STEP 1 GET DEFAULT VALUE ────────────────────────────────────
@@ -153,6 +157,8 @@ class AC_Env(gym.Env):
         self.random_tp=assign_dict['random_tp']
         self.errors = assign_dict['errors']
         self.track = assign_dict['track']
+        self.store_data = assign_dict['store_data']
+        self.normalize_obs = assign_dict['normalize_obs']
     def teleport_conversion(self):
         # add offset for generalization
         FloatArr = c_float * 3
@@ -250,11 +256,17 @@ class AC_Env(gym.Env):
         
         
         # If the car is out of the track too long, then the episode is early terminated
+        if self.store_data:
+            self.data.append(self.states)
         if self.wrong_action >self.errors:
             print('too many wrong actions')
             self.done = True
 
         if self.n_obj > self.obj_to_lap:
+            if self.store_data:
+                df = pd.DataFrame(self.data)
+                df.to_excel("test.xlsx",index=False)
+                self.data=[]
             self.done=True
 
         # If the car is blocked in one segment, then the episode is early terminated
@@ -280,7 +292,7 @@ class AC_Env(gym.Env):
         info = {}
         return [obs,reward ,done,info]
 
-    def normalizeData(self,data,min,max):
+    def normalizeData(self,data):
         return (data - np.min(data)) / (np.max(data) - np.min(data))
 
     def update_observations(self):
@@ -318,11 +330,13 @@ class AC_Env(gym.Env):
         self.obs ={k:self.states[k] for k in ('velocity','acceleration') if k in self.states}
         self.obs1d = sim_info.states_to_1d_vector(self.obs)
         self.obs1d = np.append(self.obs1d,np.array([self.last_steering]).astype(np.float32))
-        self.obs1d = np.append(self.obs1d,np.array([self.last_input]).astype(np.float32))
+        #self.obs1d = np.append(self.obs1d,np.array([self.last_input]).astype(np.float32))
         
         #Compute the distance with the border of the track
         lidar,_,_= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
-        lidar= self.normalizeData(lidar,0,max(lidar))
+        if lidar.shape[0]!=0:
+            if self.normalize_obs:
+                lidar=self.normalizeData(lidar)
         # if len(lidar)< 61, then the car is out of track --> add 0 to have data consistency
         if lidar.shape[0]< 61:
             self.out_of_road= 1
@@ -402,7 +416,7 @@ class AC_Env(gym.Env):
 
         #When out of the track, the reward becomes negative to indicate that it's not a good way to drive
         if self.out_of_road:
-            self.reward_step = -10
+            self.reward_step -= 20
 
         if self.states['speedKmh'] <1 and time_reward > 0.2:
             self.reward_step = min([-0.1,self.reward_step])
@@ -462,8 +476,10 @@ class AC_Env(gym.Env):
                 curvatures = np.append(curvatures,self.track_data[new_idx,11]*self.track_data[new_idx,7])
             else:
                 curvatures = np.append(curvatures,self.track_data[idx + i,11]*self.track_data[idx + i,7])
-
-        return self.normalizeData(curvatures)
+        if self.normalize_obs:
+            return self.normalizeData(curvatures)
+        else:
+            return curvatures
     def find_nearest(self):
         """This function is looking in depth where the car is in order to compute the difference between its 
         position, its angle and its speed difference with the reference.
@@ -486,7 +502,7 @@ class AC_Env(gym.Env):
         norms =np.sqrt(inner1d(np.stack(deltas,axis = 1),np.stack(deltas,axis = 1)))
         minimum_norm = norms.argmin()
         norm = norms.min()
-        minimum_norm += 48
+        minimum_norm += 6
         if minimum_norm >= norms.shape[0]: 
             minimum_norm = minimum_norm - norms.shape[0]
         
