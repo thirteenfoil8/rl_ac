@@ -14,7 +14,7 @@ import time
 # lidar 2D
 # interesctions based on https://www.geeksforgeeks.org/check-if-two-given-line-segments-intersect/
 global laplines, checkbtn, plotter, LINE_WIDTH, LINE_ALPHA, LINE_COLOR
-def init_track_data(track = 'vallelunga',folder="Data"):
+def init_track_data(track = 'vallelunga',folder="Data",plot=False):
     TRACK = track
 
     FOLDER = folder
@@ -150,21 +150,46 @@ def init_track_data(track = 'vallelunga',folder="Data"):
         sideleft_xy[:,1] *= -1
         sideright_xy = np.delete(sideright_xyz, obj=1, axis=1)
         sideright_xy[:,1] *= -1
+    if plot:
+        df= pd.read_excel('test.xlsx')
+        df = df.sort_values(by='spline_position')
+        positions =[]
+        for i in range(df.shape[0]):
+            temp=df.position[i].replace(' ','').replace('[','').replace(']','').split(',')
+            temp_list=[]
+            for idx,j in enumerate(temp):
+                value=float(j)
+                if idx== 2:
+                    value*=-1
+            
+                temp_list.append(value)
+            positions.append(temp_list)
+        fig = plt.figure(figsize=(16,8))
+        ax = fig.add_subplot()
 
-
-    #fig = plt.figure(figsize=(16,8))
-    #ax = fig.add_subplot()
-
-    #tr = mtransforms.Affine2D().rotate_deg(CIRCUIT_ROTATION).translate(CIRCUIT_TRANSLATE_X, CIRCUIT_TRANSLATE_Y) + ax.transData
-
-    #ax.scatter(centerline_xy[:,0], centerline_xy[:,1], c="g", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
-    #ax.scatter(sideleft_xy[:,0], sideleft_xy[:,1], c="r", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
-    #ax.scatter(sideright_xy[:,0], sideright_xy[:,1], c="b", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
-    #plt.show()
+        tr = mtransforms.Affine2D().rotate_deg(CIRCUIT_ROTATION).translate(CIRCUIT_TRANSLATE_X, CIRCUIT_TRANSLATE_Y) + ax.transData
+        
+        scatter =ax.scatter(list(zip(*positions))[0], list(zip(*positions))[2], c=df.speedKmh, marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
+        ax.annotate(str(df.lap_time_ms[int(df.shape[0])-200]/1000)+' Sec', (list(zip(*positions))[0][int(df.shape[0]-200)], list(zip(*positions))[2][int(df.shape[0]-200)]))
+        ax.annotate(str(df.lap_time_ms[int(df.shape[0]*2/6)]/1000)+' Sec', (list(zip(*positions))[0][int(df.shape[0]*2/6)], list(zip(*positions))[2][int(df.shape[0]*2/6)]))
+        ax.annotate(str(df.lap_time_ms[int(df.shape[0]*3/6)]/1000)+' Sec', (list(zip(*positions))[0][int(df.shape[0]*3/6)], list(zip(*positions))[2][int(df.shape[0]*3/6)]),xytext=(list(zip(*positions))[0][int(df.shape[0]*3/6)]+10, list(zip(*positions))[2][int(df.shape[0]*3/6)]))
+        ax.annotate(str(df.lap_time_ms[int(df.shape[0]*4/6)]/1000)+' Sec', (list(zip(*positions))[0][int(df.shape[0]*4/6)], list(zip(*positions))[2][int(df.shape[0]*4/6)]))
+        ax.annotate(str(df.lap_time_ms[int(df.shape[0]*5/6)]/1000)+' Sec', (list(zip(*positions))[0][int(df.shape[0]*5/6)], list(zip(*positions))[2][int(df.shape[0]*5/6)]))
+        ax.annotate('Start Point', (list(zip(*positions))[0][0], list(zip(*positions))[2][0]))
+        ax.annotate('End Point', (list(zip(*positions))[0][-1], list(zip(*positions))[2][-1]))
+        ax.scatter(centerline_xy[:,0], centerline_xy[:,1], c="#000000", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr,label='Centerline')
+        ax.scatter(sideleft_xy[:,0], sideleft_xy[:,1], c="r", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr,label='left side')
+        ax.scatter(sideright_xy[:,0], sideright_xy[:,1], c="b", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr,label='right side')
+        legend1 = ax.legend(*scatter.legend_elements(),
+                        loc="lower right", title="Speed")
+        ax.add_artist(legend1)
+        ax.legend()
+        ax.set_title('Progression of the Agent on Vallelunga')
+        plt.show()
 
     return sideleft_xy,sideright_xy,centerline_xy,forward_xyz,track_data
     
-#init_track_data()    
+#init_track_data(plot=True)    
 
 
 def segment_length(px, py, qx, qy):
@@ -406,19 +431,22 @@ def compute_lidar(max_dist, half_angle, angle_inc, dir_xy,intersect_type, size,p
 
 
 #print(lidar_segments.shape)
-def compute_distances(position,lidar_points):
+def compute_distances(position,lidar_points,centralize):
     lidar_distances = []
     for i in lidar_points:
         i[1] *= -1
         distance=np.linalg.norm(i-[position[0],position[2]])
         #if distance > 300:
         #    distance = 300
-        lidar_distances.append(distance)
+        if centralize:
+            lidar_distances.append(np.log(distance)) 
+        else:
+            lidar_distances.append(distance)
     arr = np.array(lidar_distances)
     arr = arr.astype(np.float32)
     return arr
 
-def compute_lidar_distances(look,position,sideleft_xy,sideright_xy):
+def compute_lidar_distances(look,position,sideleft_xy,sideright_xy,centralize=False):
     max_dist = 3000  # 1km forward looking
     half_angle = 60
     angle_inc = 2
@@ -448,17 +476,20 @@ def compute_lidar_distances(look,position,sideleft_xy,sideright_xy):
     for i in lidar_segments:
         lidar_points.append(i[1])
     lidar_points= np.array(lidar_points)
-    arr = compute_distances(position,lidar_points)
-    #lidar_distances = []
-    #for i in lidar_points:
-    #    lidar_distances.append(np.linalg.norm(i-centerline_xy))
-
-    #arr = np.array(lidar_distances)
-    #maximum=0
-    #if len(lidar_distances)==0:
-    #    maximum=1000
-    #else:
-    #    maximum= max(lidar_distances)
-    #arr = np.interp(lidar_distances, [0, maximum], [-1, 1])
-    #arr = arr.astype(np.float32)
+    arr = compute_distances(position,lidar_points,centralize)
+    ####################   PLOT
+    #CIRCUIT_LIMIT_X = 560       # in meters     560 for Vallelunga
+    #CIRCUIT_LIMIT_Y = 195       # in meters     195 for Vallelunga
+    #CIRCUIT_ROTATION = 0     # in degrees   -57° for Vallelunga
+    #CIRCUIT_TRANSLATE_X = 0     # in meters       0 for Vallelunga
+    #CIRCUIT_TRANSLATE_Y = 0    # in meters       0 for Vallelunga
+    #fig = plt.figure(figsize=(16,8))
+    #ax = fig.add_subplot()
+    #tr = mtransforms.Affine2D().rotate_deg(CIRCUIT_ROTATION).translate(CIRCUIT_TRANSLATE_X, CIRCUIT_TRANSLATE_Y) + ax.transData
+    #ax.scatter(sideleft_xy[:,0], sideleft_xy[:,1], c="r", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr,label='left side')
+    #ax.scatter(sideright_xy[:,0], sideright_xy[:,1], c="b", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr,label='right side')
+    #ax.set_title('Lidar sensors')
+    #if lidar_segments.shape[0] > 0:
+    #    for k in range(lidar_segments.shape[0]):
+    #        ax.plot(lidar_segments[k,:,0], lidar_segments[k,:,1], c="m", linewidth=0.5, alpha=0.5, transform=tr)
     return arr,lidar_points,centerline_xy

@@ -170,14 +170,14 @@ if os.path.exists(track_path + track_filename):
     
 # DEBUG !!!!!!!!!!!!!!!!
 
-fig = plt.figure(figsize=(16,8))
-ax = fig.add_subplot()
+#fig = plt.figure(figsize=(16,8))
+#ax = fig.add_subplot()
 
-tr = mtransforms.Affine2D().rotate_deg(CIRCUIT_ROTATION).translate(CIRCUIT_TRANSLATE_X, CIRCUIT_TRANSLATE_Y) + ax.transData
+#tr = mtransforms.Affine2D().rotate_deg(CIRCUIT_ROTATION).translate(CIRCUIT_TRANSLATE_X, CIRCUIT_TRANSLATE_Y) + ax.transData
 
-ax.scatter(centerline_xy[:,0], centerline_xy[:,1], c="g", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
-ax.scatter(sideleft_xy[:,0], sideleft_xy[:,1], c="r", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
-ax.scatter(sideright_xy[:,0], sideright_xy[:,1], c="b", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
+#ax.scatter(centerline_xy[:,0], centerline_xy[:,1], c="g", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
+#ax.scatter(sideleft_xy[:,0], sideleft_xy[:,1], c="r", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
+#ax.scatter(sideright_xy[:,0], sideright_xy[:,1], c="b", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr)
 
 # END DEBUG !!!!!!!!!!!!!!!!
 
@@ -1704,27 +1704,27 @@ def ckbtn_onclick(label):
 # Main plot code  #
 #==================
 
-fig = plt.figure(figsize=(16,8))
-gs = fig.add_gridspec(8, 8)
-ax1 = fig.add_subplot(gs[:, 0])
-ax2 = fig.add_subplot(gs[0, 3:6])
-ax3 = fig.add_subplot(gs[1:, 1:], label=DISPLAY_MODE)
+#fig = plt.figure(figsize=(16,8))
+#gs = fig.add_gridspec(8, 8)
+#ax1 = fig.add_subplot(gs[:, 0])
+#ax2 = fig.add_subplot(gs[0, 3:6])
+#ax3 = fig.add_subplot(gs[1:, 1:], label=DISPLAY_MODE)
 
-# make plot
-config_plot(ax3, DISPLAY_MODE)
+## make plot
+#config_plot(ax3, DISPLAY_MODE)
 
-# make checkbuttons
-checkbtn = config_checkbuttons(fig)
+## make checkbuttons
+#checkbtn = config_checkbuttons(fig)
 
-# make radiobuttons
-ax2.axis('off')
-radio =  MyRadioButtons(fig, ax2,['Lap Time','Pedals','Velocity Track', 'Curvature', 'Velocity Plot', 'G Plot', 'Traj Lateral Dist', 'Veloc Delta Angle', 'Tire Slip Angle', 'Tire Slip Ratio', 'Lidar'], active=1, activecolor='green', size=100, ncol=3)
+## make radiobuttons
+#ax2.axis('off')
+#radio =  MyRadioButtons(fig, ax2,['Lap Time','Pedals','Velocity Track', 'Curvature', 'Velocity Plot', 'G Plot', 'Traj Lateral Dist', 'Veloc Delta Angle', 'Tire Slip Angle', 'Tire Slip Ratio', 'Lidar'], active=1, activecolor='green', size=100, ncol=3)
 
-radio.set_checkbuttons(checkbtn)
-checkbtn.on_clicked(ckbtn_onclick)
+#radio.set_checkbuttons(checkbtn)
+#checkbtn.on_clicked(ckbtn_onclick)
 
-plt.tight_layout()
-plt.show()
+#plt.tight_layout()
+#plt.show()
 
 
 

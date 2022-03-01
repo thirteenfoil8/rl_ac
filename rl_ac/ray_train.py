@@ -14,12 +14,13 @@ def env_creator(env_config):
 register_env('Model',  env_creator)
 
 
+
 tune.run(
     "SAC", # reinforced learning agent
     name = "SAC",
     # to resume training from a checkpoint, set the path accordingly:
     #resume = True, # you can resume from checkpoint
-    #restore =r'.\ray_results\SAC\SAC_normalized\checkpoint_000200\checkpoint-200',
+    #restore =r'.\ray_results\SAC\SAC_prog_new_lidar_suite_4\checkpoint_031400',
     checkpoint_freq = 200,
     checkpoint_at_end = True,
     local_dir = r'./ray_results/',
@@ -31,8 +32,6 @@ tune.run(
         "framework": "tf",
         #"framework": "tf2",
         #"eager_tracing": True,
-        #"train_batch_size": 128,
-        #"timesteps_per_iteration": 256,
         
         "lr": 0.001,
         "env_config":{
@@ -41,13 +40,14 @@ tune.run(
             "random_tp":True,
             "errors":50,
             "track":"vallelunga",
-            "store_data":True,
+            "store_data":False,
             "normalize_obs":False,
+            "centralize_obs":False,
+            "progressiv_action":False,
             },
         ### Uncomment this if you use SAC
         "store_buffer_in_checkpoints": True,
-        #"prioritized_replay": True,
-        #"_deterministic_loss":True,
+        "prioritized_replay": True,
         "policy_model": {
             "fcnet_hiddens": [256, 256],
             "fcnet_activation": "relu",
@@ -57,7 +57,7 @@ tune.run(
         "fcnet_hiddens": [256, 256],
         "fcnet_activation": "relu",
         },
-        #"train_batch_size": 128,
+        "train_batch_size": 128,
         "timesteps_per_iteration": 256,
 
         

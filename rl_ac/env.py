@@ -26,21 +26,19 @@ class ClipAction(gym.core.ActionWrapper):
         self.high = 1
 
     def action(self, action):
+        if self.progressiv_action:
+            action[1] = self.last_steering + action[1]*0.1
+            action[0] = self.last_input + action[0]*0.6
         
         if action[1] > self.last_steering+0.04: # 9° 
             action[1] = self.last_steering+0.04
         if action[1] < self.last_steering-0.04:
             action[1] = self.last_steering-0.04
-
-        #if action[0] > self.last_input+0.2: # 0.2 input difference° 
-        #    action[0] = self.last_input+0.2
-        #if action[0] < self.last_input-0.2:
-        #    action[0] = self.last_input-0.2
         
 
         
         
-        return np.array([action[0],np.clip(action[1], self.low, self.high)])
+        return np.array([np.clip(action[0], self.low, self.high),np.clip(action[1], self.low, self.high)])
 
 class AC_Env(gym.Env):
     """
@@ -78,7 +76,6 @@ class AC_Env(gym.Env):
         self.eps=0
         self.data = []
         self.time_section = 0
-        self.store_data=True
         
         
         
@@ -92,7 +89,7 @@ class AC_Env(gym.Env):
         self.sim =sim_info.SimStates()
         self.line=sim_info.LineControl()
         self.states,self._dict = self._vehicle.read_states() 
-        #self.sim.speed(4)
+        self.sim.speed(3)
         
         
         self.obs1d = []
@@ -124,7 +121,9 @@ class AC_Env(gym.Env):
             'errors'                : [50, 'any', int],
             'track'                 :['vallelunga','any',str],
             'store_data'            :[True,False],  
-            'normalize_obs'         :[False,True]
+            'normalize_obs'         :[False,True],
+            "centralize_obs"      :[False,True],
+            "progressiv_action"   :[False,True],
         }
         
         # ─── STEP 1 GET DEFAULT VALUE ────────────────────────────────────
@@ -159,6 +158,8 @@ class AC_Env(gym.Env):
         self.track = assign_dict['track']
         self.store_data = assign_dict['store_data']
         self.normalize_obs = assign_dict['normalize_obs']
+        self.centralize_obs = assign_dict["centralize_obs"]
+        self.progressiv_action = assign_dict["progressiv_action"]
     def teleport_conversion(self):
         # add offset for generalization
         FloatArr = c_float * 3
@@ -209,7 +210,7 @@ class AC_Env(gym.Env):
         self.controls.teleport(self.tp_pos,self.tp_dir)
         time.sleep(0.5)
         self.states,self._dict = self._vehicle.read_states()
-        #self.controls.change_controls(self._dict,0,0)
+        self.controls.change_controls(self._dict,0,0)
         
         #self.sim.reset()
 
@@ -224,10 +225,12 @@ class AC_Env(gym.Env):
         self.reward_step= 0
         self.last_steering=0
         self.last_input=0
+        self.data=[]
         self.time_section = time.time()
         self.time_check=time.time()
         self.collision =self._dict['collision_counter']
         self.spline_start=self.truncate(self.states['spline_position'],2)
+        self.spline_before = self.states['spline_position']
         self.obj_to_lap=100+ (100-self.truncate(self.spline_start*100,0)+1) 
 
         return self.obs1d
@@ -261,11 +264,15 @@ class AC_Env(gym.Env):
         if self.wrong_action >self.errors:
             print('too many wrong actions')
             self.done = True
-
+        self.last_lap_time_ms = self.states['lap_time_ms']
+        if self.states['lap_time_ms'] < self.last_lap_time_ms:
+            self.data=[]
         if self.n_obj > self.obj_to_lap:
             if self.store_data:
                 df = pd.DataFrame(self.data)
+                self.sim.pause()
                 df.to_excel("test.xlsx",index=False)
+                self.sim.play()
                 self.data=[]
             self.done=True
 
@@ -278,6 +285,7 @@ class AC_Env(gym.Env):
         #   Update observations using RAM Data
         #   Update the reward
         #   Store data to the buffer
+        self.spline_before = self.states['spline_position']
         if not self.done:
             self.move(action)
             self.update_observations()
@@ -293,6 +301,8 @@ class AC_Env(gym.Env):
         return [obs,reward ,done,info]
 
     def normalizeData(self,data):
+        # for lidar 10 m max 0 min 
+        
         return (data - np.min(data)) / (np.max(data) - np.min(data))
 
     def update_observations(self):
@@ -333,7 +343,7 @@ class AC_Env(gym.Env):
         #self.obs1d = np.append(self.obs1d,np.array([self.last_input]).astype(np.float32))
         
         #Compute the distance with the border of the track
-        lidar,_,_= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy)
+        lidar,_,_= compute_lidar_distances(self.states["look"],self.states["position"],self.sideleft_xy,self.sideright_xy,self.centralize_obs)
         if lidar.shape[0]!=0:
             if self.normalize_obs:
                 lidar=self.normalizeData(lidar)
@@ -342,7 +352,7 @@ class AC_Env(gym.Env):
             self.out_of_road= 1
             self.wrong_action +=1
             self.obs1d =np.append(self.obs1d,lidar)
-            self.obs1d =np.append(self.obs1d,np.zeros(61-lidar.shape[0]).astype(np.float32))
+            self.obs1d =np.append(self.obs1d,-np.ones(61-lidar.shape[0]).astype(np.float32))
         else:
             self.obs1d =np.append(self.obs1d,lidar)
         self.obs1d = np.append(self.obs1d,self.find_curvature().astype(np.float32))
@@ -396,8 +406,8 @@ class AC_Env(gym.Env):
         time_reward = time_in_section/10
 
         #If the car stayed too long in one segment, then the reward is decreasing
-        if time_reward >0.3:
-            time_reward += self.n_obj
+        #if time_reward >0.3:
+        #    time_reward += self.n_obj
         
         # The nearer to the segment end/goal, the biggest the reward 
         self.reward_step= self.n_obj+ (1- (dist_goal_after/(dist_goal_after+dist_goal_before)))*(1- time_reward)
@@ -418,8 +428,8 @@ class AC_Env(gym.Env):
         if self.out_of_road:
             self.reward_step -= 20
 
-        if self.states['speedKmh'] <1 and time_reward > 0.2:
-            self.reward_step = min([-0.1,self.reward_step])
+        #if self.states['speedKmh'] <1 and time_reward > 0.2:
+        #    self.reward_step = min([-0.1,self.reward_step])
         self.reward_total += self.reward_step
 
     def find_progression(self):
@@ -473,9 +483,16 @@ class AC_Env(gym.Env):
         for i in range(14):
             if idx + i >= len(self.track_data[:,11]):
                 new_idx = (idx + i)-len(self.track_data[:,11])
-                curvatures = np.append(curvatures,self.track_data[new_idx,11]*self.track_data[new_idx,7])
+                #try Ln(1/x) instead of 1/x
+                if self.centralize_obs:
+                    curvatures = np.append(curvatures,np.log(1/(self.track_data[new_idx,7])))
+                else:
+                    curvatures = np.append(curvatures,1/(self.track_data[new_idx,11]*self.track_data[new_idx,7]))
             else:
-                curvatures = np.append(curvatures,self.track_data[idx + i,11]*self.track_data[idx + i,7])
+                if self.centralize_obs:
+                    curvatures = np.append(curvatures,np.log(1/(self.track_data[idx + i,7])))
+                else:
+                    curvatures = np.append(curvatures,1/(self.track_data[idx + i,11]*self.track_data[idx + i,7]))
         if self.normalize_obs:
             return self.normalizeData(curvatures)
         else:
@@ -502,7 +519,7 @@ class AC_Env(gym.Env):
         norms =np.sqrt(inner1d(np.stack(deltas,axis = 1),np.stack(deltas,axis = 1)))
         minimum_norm = norms.argmin()
         norm = norms.min()
-        minimum_norm += 6
+        #minimum_norm += 6
         if minimum_norm >= norms.shape[0]: 
             minimum_norm = minimum_norm - norms.shape[0]
         
@@ -514,6 +531,9 @@ class AC_Env(gym.Env):
         spline_kevin = (np.abs(self.df.NormalizedSplinePosition-self.states['spline_position'])).argmin()
         speed = self.df.Speed.iloc[[spline_kevin]]
 
+        if self.centralize_obs:
+            norm = -np.log(norm)
+            error = -np.log(error)
 
 
         return norm,error,speed.values[0]

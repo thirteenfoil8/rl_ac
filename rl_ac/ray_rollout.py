@@ -30,7 +30,7 @@ config = {
     "env_config":{
             "max_steps": 500,
             "reward_speed_prop":False,
-            "random_tp":True,
+            "random_tp":False,
             "errors":200,
             "track":"vallelunga",
             "store_data":True,
