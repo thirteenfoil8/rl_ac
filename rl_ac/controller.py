@@ -33,7 +33,7 @@ class VehiclePIDController():
                              K_I -- Integral term
         """
         if not args_lateral:
-            args_lateral = {'K_P':3, 'K_D': 0.5, 'K_I':  0}
+            args_lateral = {'K_P':3, 'K_D': 0.5, 'K_I':  10}
         if not args_longitudinal:
             args_longitudinal = {'K_P': 0.3, 'K_D': 0, 'K_I': 10}
         self.info = info
@@ -264,19 +264,8 @@ class PIDLateralController():
             -1 represent maximum steering to left
             +1 maximum steering to right
         """
-        PID = True
         self._vehicle = states
-        if PID:
-            return self._pid_control(waypoint)
-        else:
-            x =self._vehicle['position'][0]
-            y =self._vehicle['position'][2]
-            yaw = self._vehicle['local_angular_velocity'][2]
-            v = self._vehicle['speedKmh']
-            x_target = waypoint[0]
-            y_target = waypoint[2]
-            yaw_target = yaw
-            return self.path_following_controller(x, y, yaw, v, x_target, y_target, yaw_target)
+        return self._pid_control(waypoint)
 
     def angle_clockwise(self,A,B):
         dot = np.dot(A,B)

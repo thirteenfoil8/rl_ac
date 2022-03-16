@@ -16,6 +16,9 @@ import matplotlib.pyplot as plt
 from lidar import init_track_data,compute_lidar_distances
 #Features_needed for the PID controller
 features_needed = ['gear',
+                   'gas',
+                   'brake',
+                   'steer',
                    'rpm',
                    'speedKmh',
                    'velocity',
@@ -334,19 +337,6 @@ class SimControl:
         self.controls.teleport_dir = dir
         self.tp=True
         self.update_control()
-        #time.sleep(0.5)
-
-        #self.controls.clutch=1
-        #gas = 0
-        #brake = 0 
-        #steer = 0
-        #self.controls.gas = gas
-        #self.controls.brake = brake
-        #self.controls.steer = steer
-        #self.controls.gear_dn = 0
-        #self.change_gear(0)
-        #self.time_check = time.time()
-        #self.update_control()
 
     def change_gear(self,state):
         if state == 0:
@@ -403,8 +393,6 @@ class LineControl:
         self.init_file()
         self._lines = mmap.mmap(0, ctypes.sizeof(SPageLineControls), self.file)
         self.lines =SPageLineControls.from_buffer(self._lines)
-        #self._line = mmap.mmap(0, ctypes.sizeof(SPageLinestates), "AcTools.CSP.ModuleLDM.AIProject.Line.v0")
-        #self.line =SPageLinestates.from_buffer(self._line)
 
     def init_file(self):
         p =subprocess.Popen('Drivemaster.AiProjectWriter.exe {}'.format(self.file))

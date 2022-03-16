@@ -22,7 +22,7 @@ string = ' '.join([
     '--env',
     'Model',
     '--episodes',
-    '10',
+    '1',
     '--steps', 
     '1000000'
 ])
@@ -35,6 +35,8 @@ config = {
             "track":"vallelunga",
             "store_data":True,
             "normalize_obs":False,
+            "centralize_obs":False,
+            "progressiv_action":False,
             },
 }
 config_json = json.dumps(config)

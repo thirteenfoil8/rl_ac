@@ -151,7 +151,7 @@ def init_track_data(track = 'vallelunga',folder="Data",plot=False):
         sideright_xy = np.delete(sideright_xyz, obj=1, axis=1)
         sideright_xy[:,1] *= -1
     if plot:
-        df= pd.read_excel('test.xlsx')
+        df= pd.read_excel('test_PID.xlsx')
         df = df.sort_values(by='spline_position')
         positions =[]
         for i in range(df.shape[0]):
@@ -175,8 +175,8 @@ def init_track_data(track = 'vallelunga',folder="Data",plot=False):
         ax.annotate(str(df.lap_time_ms[int(df.shape[0]*3/6)]/1000)+' Sec', (list(zip(*positions))[0][int(df.shape[0]*3/6)], list(zip(*positions))[2][int(df.shape[0]*3/6)]),xytext=(list(zip(*positions))[0][int(df.shape[0]*3/6)]+10, list(zip(*positions))[2][int(df.shape[0]*3/6)]))
         ax.annotate(str(df.lap_time_ms[int(df.shape[0]*4/6)]/1000)+' Sec', (list(zip(*positions))[0][int(df.shape[0]*4/6)], list(zip(*positions))[2][int(df.shape[0]*4/6)]))
         ax.annotate(str(df.lap_time_ms[int(df.shape[0]*5/6)]/1000)+' Sec', (list(zip(*positions))[0][int(df.shape[0]*5/6)], list(zip(*positions))[2][int(df.shape[0]*5/6)]))
-        ax.annotate('Start Point', (list(zip(*positions))[0][0], list(zip(*positions))[2][0]))
-        ax.annotate('End Point', (list(zip(*positions))[0][-1], list(zip(*positions))[2][-1]))
+        #ax.annotate('Start Point', (list(zip(*positions))[0][0], list(zip(*positions))[2][0]))
+        #ax.annotate('End Point', (list(zip(*positions))[0][-1], list(zip(*positions))[2][-1]))
         ax.scatter(centerline_xy[:,0], centerline_xy[:,1], c="#000000", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr,label='Centerline')
         ax.scatter(sideleft_xy[:,0], sideleft_xy[:,1], c="r", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr,label='left side')
         ax.scatter(sideright_xy[:,0], sideright_xy[:,1], c="b", marker="o", s=0.2*(72./fig.dpi)**2, transform=tr,label='right side')

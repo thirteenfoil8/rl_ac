@@ -24,16 +24,21 @@ class ClipAction(gym.core.ActionWrapper):
         super().__init__(env)
         self.low = -1
         self.high = 1
+        self.k11 = 0.1
+        self.k12 = 0.3
+        self.k21 = 0.9
+        self.k22 = 0.7
 
     def action(self, action):
         if self.progressiv_action:
-            action[1] = self.last_steering + action[1]*0.1
-            action[0] = self.last_input + action[0]*0.6
+            action[0] = action[0]*self.k12 + self.last_input*self.k22  
+            action[1] = action[1]*self.k11 + self.last_steering*self.k21
+        else:
         
-        if action[1] > self.last_steering+0.04: # 9° 
-            action[1] = self.last_steering+0.04
-        if action[1] < self.last_steering-0.04:
-            action[1] = self.last_steering-0.04
+            if action[1] > self.last_steering+0.04: # 9° 
+                action[1] = self.last_steering+0.04
+            if action[1] < self.last_steering-0.04:
+                action[1] = self.last_steering-0.04
         
 
         
@@ -231,7 +236,8 @@ class AC_Env(gym.Env):
         self.collision =self._dict['collision_counter']
         self.spline_start=self.truncate(self.states['spline_position'],2)
         self.spline_before = self.states['spline_position']
-        self.obj_to_lap=100+ (100-self.truncate(self.spline_start*100,0)+1) 
+        self.obj_to_lap=100+ (100-self.truncate(self.spline_start*100,0)) 
+        self.data_cleaning = False
 
         return self.obs1d
     def move(self,action):
@@ -261,12 +267,14 @@ class AC_Env(gym.Env):
         # If the car is out of the track too long, then the episode is early terminated
         if self.store_data:
             self.data.append(self.states)
+            self.data.append({"reward":self.reward_step})
         if self.wrong_action >self.errors:
             print('too many wrong actions')
             self.done = True
-        self.last_lap_time_ms = self.states['lap_time_ms']
-        if self.states['lap_time_ms'] < self.last_lap_time_ms:
+        if self.states['spline_position'] <self.spline_before and not self.data_cleaning:
+            print('cleaning')
             self.data=[]
+            self.data_cleaning=True
         if self.n_obj > self.obj_to_lap:
             if self.store_data:
                 df = pd.DataFrame(self.data)
@@ -285,14 +293,16 @@ class AC_Env(gym.Env):
         #   Update observations using RAM Data
         #   Update the reward
         #   Store data to the buffer
-        self.spline_before = self.states['spline_position']
+        
         if not self.done:
+            self.spline_before = self.states['spline_position']
             self.move(action)
             self.update_observations()
             self.update_reward_naive()
             self.count+= 1
             self.last_steering = action[1]
             self.last_input = action[0]
+            
 
         obs = self.obs1d
         reward = self.reward_step
@@ -426,7 +436,7 @@ class AC_Env(gym.Env):
 
         #When out of the track, the reward becomes negative to indicate that it's not a good way to drive
         if self.out_of_road:
-            self.reward_step -= 20
+            self.reward_step -= 100
 
         #if self.states['speedKmh'] <1 and time_reward > 0.2:
         #    self.reward_step = min([-0.1,self.reward_step])
@@ -591,7 +601,7 @@ class AC_Env(gym.Env):
         info = {}
         # ─── RESET ITERATION VARIABLES ───────────────────────────────────
         self.reward_step = 0
-        print(reward)
+
         return [obs,reward ,done,info,action]
     def store_expert_data(self):
         """This function is only used in case of driving the car using the PID controller 
@@ -604,7 +614,6 @@ class AC_Env(gym.Env):
             os.path.join(ray._private.utils.get_user_temp_dir(), "demo-out"))
         for eps_id in range(1):
             self.reset()
-            self.sim.reset()
             self.controller.data_flag=True
             #While the lap is not finished, Store all states and actions inside a buffer
             while self.controller.data_flag:
@@ -612,6 +621,8 @@ class AC_Env(gym.Env):
                 prev_reward = self.reward_step
                 prev_obs = self.obs1d
                 obs,reward ,done,info,action = self.controller_step()
+                print(self._dict)
+                print("\n \n \n ############################")
                 if not self.controller.data_flag:
                     done = True
                 batch_builder.add_values(
