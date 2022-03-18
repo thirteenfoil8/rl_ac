@@ -72,11 +72,17 @@ please install requirements using :
 <!-- USAGE EXAMPLES -->
 ## Usage
 In order to evaluate the policy, run the file ray_rollout.py
+
 In order to train a new policy, run the file ray_train.py
+
 In order to rune the controller PID, run the file unit_test_env
+
 The are several options to select in env_config section inside ray_train.py and ray_rollout.py. Don't hesitate to look at env.py to see what they are doing.
+
 lidar.py contains the code about the lidars
+
 env.py contains the code about the environment, the reward function and all things needed to train a policy
+
 controller.py contains everything needed for the controller
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -88,11 +94,6 @@ controller.py contains everything needed for the controller
 ## Contact
 
 Florian Genilloud - florian.genilloud@gmail.com
-
-
-<p align="right">(<a href="#top">back to top</a>)</p>
-
-
 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
