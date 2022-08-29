@@ -20,7 +20,7 @@ tune.run(
     name = "SAC",
     # to resume training from a checkpoint, set the path accordingly:
     #resume = True, # you can resume from checkpoint
-    restore =r'.\ray_results\SAC\SAC_Model_43487_00000_0_2022-03-08_09-53-45\checkpoint_013800\checkpoint-13800',
+    #restore =r'.\ray_results\SAC\SAC_Model_43487_00000_0_2022-03-08_09-53-45\checkpoint_013800\checkpoint-13800',
     checkpoint_freq = 200,
     checkpoint_at_end = True,
     local_dir = r'./ray_results/',
@@ -43,7 +43,7 @@ tune.run(
             "store_data":False,
             "normalize_obs":False,
             "centralize_obs":False,
-            "progressiv_action":True,
+            "progressiv_action":False,
             },
         ### Uncomment this if you use SAC
         "store_buffer_in_checkpoints": True,

@@ -35,10 +35,11 @@ class ClipAction(gym.core.ActionWrapper):
             action[1] = action[1]*self.k11 + self.last_steering*self.k21
         else:
         
-            if action[1] > self.last_steering+0.04: # 9° 
-                action[1] = self.last_steering+0.04
-            if action[1] < self.last_steering-0.04:
-                action[1] = self.last_steering-0.04
+            #if action[1] > self.last_steering+0.04: # 9° 
+            #    action[1] = self.last_steering+0.04
+            #if action[1] < self.last_steering-0.04:
+            #    action[1] = self.last_steering-0.04
+            pass
         
 
         
