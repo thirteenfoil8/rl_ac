@@ -52,9 +52,13 @@ This section list all major frameworks/libraries used to bootstrap this project.
 ## Getting Started
 
 ### Prerequisites
+Create an environment using :
+```sh
+  python3 -m venv venv/ 
+  source venv/bin/activate
+```
 
 please install requirements using :
-* pip
   ```sh
   pip install -r requirements.txt
   ```
